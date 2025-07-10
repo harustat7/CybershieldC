@@ -1,19 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import { Activity, Wifi, Play, Square, Zap, Network, AlertCircle, ExternalLink, RefreshCw, Send, Upload, Settings, Monitor, Info } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Activity, Wifi, Play, Square, Zap, Network, AlertCircle, ExternalLink, RefreshCw, Send, Upload, Settings, Monitor, Info, Database } from 'lucide-react';
 import { NetworkPacket } from '../../types';
-import { useRealTimePackets } from '../../hooks/useRealTimeData';
-import { UpdatedDemoTrafficApi } from '../../services/updatedDemoTrafficApi';
+import { useSupabasePackets } from '../../hooks/useSupabasePackets';
+import { UpdatedDemoTrafficApi } from '../../services/updatedDemoTrafficApi.ts';
 import { LiveTrafficApi } from '../../services/liveTrafficApi';
-
+import axios from 'axios';
 
 const LiveTrafficMonitor: React.FC = () => {
   const [isDemoTrafficLive, setIsDemoTrafficLive] = useState(false);
   const [isLiveTrafficLive, setIsLiveTrafficLive] = useState(false);
   const [isDemoApiConnected, setIsDemoApiConnected] = useState(false);
-  const [webhookUrl, setWebhookUrl] = useState('https://trialover098754321.app.n8n.cloud/webhook/646e1ad7-dd61-41b2-9893-997ee6157030');
+  const [webhookUrl, setWebhookUrl] = useState('https://metasage-ai.app.n8n.cloud/webhook/e8525f42-b2c8-4432-9844-c723d6fe5ba9');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [csvFileExists, setCsvFileExists] = useState(false);
+  const [isLiveMonitorApiConnected, setIsLiveMonitorApiConnected] = useState(false);
+  const LIVE_MONITOR_API_URL = 'http://localhost:8000';
  
   // Live traffic specific states
   const [selectedInterface, setSelectedInterface] = useState('Wi-Fi');
@@ -25,17 +27,38 @@ const LiveTrafficMonitor: React.FC = () => {
     flows_count: 0,
     uptime: 0
   });
- 
-  const [packets] = useRealTimePackets(25, isDemoTrafficLive || isLiveTrafficLive);
-  // =================== START: NEW CODE TO ADD ===================
 
+  // Use Supabase packets instead of fake data
+  const { packets, loading: packetsLoading, error: packetsError, refetch } = useSupabasePackets(25, isDemoTrafficLive || isLiveTrafficLive);
 
-  // State to track if our new FastAPI backend on port 8000 is connected
-  const [isLiveMonitorApiConnected, setIsLiveMonitorApiConnected] = useState(false);
-  const LIVE_MONITOR_API_URL = 'http://localhost:8000';
+  // New state for current packet index
+  const [currentPacketIndex, setCurrentPacketIndex] = useState(0);
+  const [currentPacket, setCurrentPacket] = useState<NetworkPacket | null>(null);
+  const [displayedPackets, setDisplayedPackets] = useState<NetworkPacket[]>([]);
 
+  // Cycle through packets one by one every second
+  const isTrafficActive = isLiveTrafficLive || isDemoTrafficLive;
+  useEffect(() => {
+    if (!isTrafficActive) return; // Do not update when stopped
+    if (packets.length === 0) {
+      setCurrentPacket(null);
+      setCurrentPacketIndex(0);
+      setDisplayedPackets([]);
+      return;
+    }
+    setCurrentPacket(packets[currentPacketIndex]);
+    setDisplayedPackets(prev => {
+      if (prev[0] && prev[0].id === packets[currentPacketIndex].id) return prev;
+      const updated = [packets[currentPacketIndex], ...prev];
+      return updated.slice(0, 25);
+    });
+    const interval = setInterval(() => {
+      setCurrentPacketIndex((prev) => (prev + 1) % packets.length);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [packets, currentPacketIndex, isTrafficActive]);
 
-  // This useEffect will check the health of our new FastAPI backend
+  // Check Live Monitor API health
   useEffect(() => {
     const checkLiveMonitorApiStatus = async () => {
       try {
@@ -46,13 +69,41 @@ const LiveTrafficMonitor: React.FC = () => {
       }
     };
    
-    checkLiveMonitorApiStatus(); // Check once on load
-    const intervalId = setInterval(checkLiveMonitorApiStatus, 5000); // Then check every 5 seconds
-    return () => clearInterval(intervalId); // Cleanup
-  }, []); // Empty array ensures this runs only once on mount
+    checkLiveMonitorApiStatus();
+    const intervalId = setInterval(checkLiveMonitorApiStatus, 5000);
+    return () => clearInterval(intervalId);
+  }, []);
 
+  // Poll backend for live status
+  useEffect(() => {
+    let consecutiveFalseCount = 0;
+    const pollStatus = async () => {
+      try {
+        const res = await axios.get('http://localhost:8000/status');
+        console.log('[Frontend Poll] live_running:', res.data.live_running);
+        if (res.data.live_running) {
+          consecutiveFalseCount = 0;
+          setIsLiveTrafficLive(true);
+        } else {
+          consecutiveFalseCount++;
+          if (consecutiveFalseCount >= 2) {
+            setIsLiveTrafficLive(false);
+          }
+        }
+      } catch (e) {
+        console.log('[Frontend Poll] Error:', e);
+        // Optionally increment false count on error
+        consecutiveFalseCount++;
+        if (consecutiveFalseCount >= 2) {
+          setIsLiveTrafficLive(false);
+        }
+      }
+    };
+    pollStatus();
+    const interval = setInterval(pollStatus, 2000);
+    return () => clearInterval(interval);
+  }, []);
 
-  // =================== END: NEW CODE TO ADD ===================
   // Check demo API health and get network interfaces on component mount
   useEffect(() => {
     const checkApiHealth = async () => {
@@ -103,7 +154,6 @@ const LiveTrafficMonitor: React.FC = () => {
       }
     };
 
-
     checkApiHealth();
    
     // Check health every 30 seconds
@@ -131,13 +181,11 @@ const LiveTrafficMonitor: React.FC = () => {
     };
   }, [isLiveTrafficLive, selectedInterface]);
 
-
   const handleGenerateTraffic = async () => {
     if (!isDemoApiConnected) {
       setError('Demo Traffic API is not available. Please start the Python backend.');
       return;
     }
-
 
     setIsLoading(true);
     setError(null);
@@ -159,13 +207,11 @@ const LiveTrafficMonitor: React.FC = () => {
     }
   };
 
-
   const handleSendCSVOnce = async () => {
     if (!isDemoApiConnected) {
       setError('Demo Traffic API is not available. Please start the Python backend.');
       return;
     }
-
 
     setIsLoading(true);
     setError(null);
@@ -186,13 +232,11 @@ const LiveTrafficMonitor: React.FC = () => {
     }
   };
 
-
   const handleStartDemoTraffic = async () => {
     if (!isDemoApiConnected) {
       setError('Demo Traffic API is not available. Please start the Python backend.');
       return;
     }
-
 
     setIsLoading(true);
     setError(null);
@@ -213,7 +257,6 @@ const LiveTrafficMonitor: React.FC = () => {
       setIsLoading(false);
     }
   };
-
 
   const handleStopDemoTraffic = async () => {
     setIsLoading(true);
@@ -236,40 +279,8 @@ const LiveTrafficMonitor: React.FC = () => {
     }
   };
 
-
-  // const handleStartLiveTraffic = async () => {
-  //   if (!isDemoApiConnected) {
-  //     setError('Live Traffic API is not available. Please start the Python backend.');
-  //     return;
-  //   }
-
-
-  //   setIsLoading(true);
-  //   setError(null);
-   
-  //   try {
-  //     const response = await LiveTrafficApi.startLiveTraffic({
-  //       webhookUrl,
-  //       interface: selectedInterface,
-  //       batchSize
-  //     });
-     
-  //     if (response.success) {
-  //       setIsLiveTrafficLive(true);
-  //       console.log('Live traffic started:', response.message);
-  //     } else {
-  //       setError(response.message);
-  //     }
-  //   } catch (error: any) {
-  //     setError(error.message || 'Failed to start live traffic');
-  //     console.error('Failed to start live traffic:', error);
-  //   } finally {
-  //     setIsLoading(false);
-  //   }
-  // };
-  // =================== REPLACED FUNCTION ===================
   const handleStartLiveTraffic = async () => {
-    if (!isLiveMonitorApiConnected) { // Check our new API's status
+    if (!isLiveMonitorApiConnected) {
       setError('Live Monitor API (port 8000) is not connected.');
       return;
     }
@@ -281,7 +292,7 @@ const LiveTrafficMonitor: React.FC = () => {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || 'Failed to start monitoring.');
-      setIsLiveTrafficLive(true);
+      // setIsLiveTrafficLive(true); // Now handled by polling
     } catch (error: any) {
       setError(error.message);
       console.error("Error starting live traffic:", error);
@@ -289,28 +300,7 @@ const LiveTrafficMonitor: React.FC = () => {
       setIsLoading(false);
     }
   };
-  // const handleStopLiveTraffic = async () => {
-  //   setIsLoading(true);
-  //   setError(null);
-   
-  //   try {
-  //     const response = await LiveTrafficApi.stopLiveTraffic();
-     
-  //     if (response.success) {
-  //       setIsLiveTrafficLive(false);
-  //       setLiveTrafficStats({ packet_count: 0, flows_count: 0, uptime: 0 });
-  //       console.log('Live traffic stopped:', response.message);
-  //     } else {
-  //       setError(response.message);
-  //     }
-  //   } catch (error: any) {
-  //     setError(error.message || 'Failed to stop live traffic');
-  //     console.error('Failed to stop live traffic:', error);
-  //   } finally {
-  //     setIsLoading(false);
-  //   }
-  // };
-  // =================== REPLACED FUNCTION ===================
+
   const handleStopLiveTraffic = async () => {
     setIsLoading(true);
     setError(null);
@@ -320,8 +310,7 @@ const LiveTrafficMonitor: React.FC = () => {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || 'Failed to stop monitoring.');
-      setIsLiveTrafficLive(false);
-      // Optional: Reset stats on stop
+      // setIsLiveTrafficLive(false); // Now handled by polling
       setLiveTrafficStats({ packet_count: 0, flows_count: 0, uptime: 0 });
     } catch (error: any) {
       setError(error.message);
@@ -330,33 +319,32 @@ const LiveTrafficMonitor: React.FC = () => {
       setIsLoading(false);
     }
   };
-  const getStatusColor = (status: NetworkPacket['status']) => {
-    switch (status) {
-      case 'normal':
-        return 'text-green-400';
-      case 'suspicious':
-        return 'text-yellow-400';
-      case 'malicious':
-        return 'text-red-400';
-      default:
-        return 'text-gray-400';
-    }
-  };
 
+  // const getStatusColor = (label: NetworkPacket['status']) => {
+  //   switch (status) {
+  //     case 'normal':
+  //       return 'text-green-400';
+  //     case 'suspicious':
+  //       return 'text-yellow-400';
+  //     case 'malicious':
+  //       return 'text-red-400';
+  //     default:
+  //       return 'text-gray-400';
+  //   }
+  // };
 
-  const getStatusBg = (status: NetworkPacket['status']) => {
-    switch (status) {
-      case 'normal':
-        return 'bg-green-500/10 border-green-500/20';
-      case 'suspicious':
-        return 'bg-yellow-500/10 border-yellow-500/20';
-      case 'malicious':
-        return 'bg-red-500/10 border-red-500/20';
-      default:
-        return 'bg-gray-500/10 border-gray-500/20';
-    }
-  };
-
+  // const getStatusBg = (status: NetworkPacket['status']) => {
+  //   switch (status) {
+  //     case 'normal':
+  //       return 'bg-green-500/10 border-green-500/20';
+  //     case 'suspicious':
+  //       return 'bg-yellow-500/10 border-yellow-500/20';
+  //     case 'malicious':
+  //       return 'bg-red-500/10 border-red-500/20';
+  //     default:
+  //       return 'bg-gray-500/10 border-gray-500/20';
+  //   }
+  // };
 
   const formatUptime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -365,14 +353,21 @@ const LiveTrafficMonitor: React.FC = () => {
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-
   const getFriendlyInterfaceName = (interfaceName: string) => {
     return interfaceFriendlyNames[interfaceName] || interfaceName;
   };
 
-
   const isAnyTrafficActive = isDemoTrafficLive || isLiveTrafficLive;
 
+  // Memoized sorted packets in ascending order by time (oldest to newest)
+  const sortedPackets = useMemo(() => {
+    return [...displayedPackets].sort((a, b) => {
+      if (a.time && b.time) {
+        return new Date(a.time).getTime() - new Date(b.time).getTime();
+      }
+      return a.id - b.id;
+    });
+  }, [displayedPackets]);
 
   return (
     <div className="bg-gray-900/50 backdrop-blur-sm border border-cyan-500/20 rounded-xl p-6 h-full">
@@ -383,7 +378,7 @@ const LiveTrafficMonitor: React.FC = () => {
           </div>
           <div>
             <h2 className="text-lg font-semibold text-white">Live Traffic Monitor</h2>
-            <p className="text-sm text-gray-400">Real-time network packets</p>
+            {/* <p className="text-sm text-gray-400">Real-time network packets with AI predictions</p> */}
           </div>
         </div>
         <div className="flex items-center space-x-4">
@@ -413,7 +408,6 @@ const LiveTrafficMonitor: React.FC = () => {
             )}
           </div>
 
-
           {/* Live Traffic Controls */}
           <div className="flex items-center space-x-2">
             <div className="text-xs text-gray-400 font-medium">Live:</div>
@@ -440,31 +434,51 @@ const LiveTrafficMonitor: React.FC = () => {
             )}
           </div>
 
-
           {/* Status Indicator */}
-          <div className="flex items-center space-x-2 border-l border-gray-700 pl-4">
-            <Wifi className={`w-5 h-5 ${isAnyTrafficActive ? 'text-green-400 animate-pulse' : 'text-gray-400'}`} />
+          {/* <div className="flex items-center space-x-2 border-l border-gray-700 pl-4">
+            <Database className={`w-5 h-5 ${packets.length > 0 ? 'text-green-400 animate-pulse' : 'text-gray-400'}`} />
             <div className="text-sm">
-              <div className={`font-medium ${isAnyTrafficActive ? 'text-green-400' : 'text-gray-400'}`}>
-                {isAnyTrafficActive ? 'Active' : 'Stopped'}
+              <div className={`font-medium ${packets.length > 0 ? 'text-green-400' : 'text-gray-400'}`}>
+                {packets.length > 0 ? 'Connected' : 'No Data'}
               </div>
               <div className="text-xs text-gray-400">
-                {isDemoTrafficLive && isLiveTrafficLive ? 'Both' :
-                 isDemoTrafficLive ? 'Demo' :
-                 isLiveTrafficLive ? 'Live' : 'None'}
+                {packets.length} packets
               </div>
             </div>
-          </div>
+          </div> */}
         </div>
       </div>
 
-
       {/* Configuration & Status */}
       <div className="mb-4 space-y-3">
-        {/* =================== START: NEW UI BLOCK TO ADD =================== */}
+        {/* Supabase Status */}
+        {/* <div className="flex items-center justify-between bg-gray-800/30 rounded-lg p-3 border border-gray-700/30">
+          <div className="flex items-center space-x-3">
+            <div className={`w-2 h-2 rounded-full ${packets.length > 0 ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'}`}></div>
+            <span className="text-sm text-gray-300">
+              Supabase: {packets.length > 0 ? 'Connected' : 'No Data'}
+            </span>
+            {packetsError && (
+              <div className="flex items-center space-x-1 text-xs text-red-400">
+                <AlertCircle className="w-3 h-3" />
+                <span>{packetsError}</span>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={refetch}
+              disabled={packetsLoading}
+              className="flex items-center space-x-1 px-2 py-1 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 hover:border-cyan-500/40 rounded text-cyan-400 hover:text-cyan-300 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+            >
+              <RefreshCw className={`w-3 h-3 ${packetsLoading ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
+            <span className="text-xs text-gray-400">Table: common_data</span>
+          </div>
+        </div> */}
 
-
-        {/* Live Monitor API Status */}
+        {/* Live Monitor API Status
         <div className="flex items-center justify-between bg-gray-800/30 rounded-lg p-3 border border-gray-700/30">
           <div className="flex items-center space-x-3">
             <div className={`w-2 h-2 rounded-full ${isLiveMonitorApiConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`}></div>
@@ -482,14 +496,10 @@ const LiveTrafficMonitor: React.FC = () => {
             <span className="text-xs text-gray-400">Port 8000</span>
             <ExternalLink className="w-3 h-3 text-gray-400" />
           </div>
-        </div>
-
-
-        {/* =================== END: NEW UI BLOCK TO ADD =================== */}
-
+        </div> */}
 
         {/* API Status */}
-        <div className="flex items-center justify-between bg-gray-800/30 rounded-lg p-3 border border-gray-700/30">
+        {/* <div className="flex items-center justify-between bg-gray-800/30 rounded-lg p-3 border border-gray-700/30">
           <div className="flex items-center space-x-3">
             <div className={`w-2 h-2 rounded-full ${isDemoApiConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`}></div>
             <span className="text-sm text-gray-300">
@@ -506,11 +516,10 @@ const LiveTrafficMonitor: React.FC = () => {
             <span className="text-xs text-gray-400">Port 3002</span>
             <ExternalLink className="w-3 h-3 text-gray-400" />
           </div>
-        </div>
-
+        </div> */}
 
         {/* Live Traffic Configuration */}
-        {isDemoApiConnected && (
+        {/* {isDemoApiConnected && (
           <div className="bg-gray-800/30 rounded-lg p-3 border border-gray-700/30">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center space-x-2">
@@ -546,12 +555,6 @@ const LiveTrafficMonitor: React.FC = () => {
                     </option>
                   ))}
                 </select>
-                <div className="mt-1 text-xs text-gray-400">
-                  {selectedInterface && interfaceFriendlyNames[selectedInterface] &&
-                   interfaceFriendlyNames[selectedInterface] !== selectedInterface && (
-                    <span>Internal: {selectedInterface}</span>
-                  )}
-                </div>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-400 mb-1">Batch Size (packets)</label>
@@ -569,11 +572,10 @@ const LiveTrafficMonitor: React.FC = () => {
               </div>
             </div>
           </div>
-        )}
-
+        )} */}
 
         {/* CSV File Status */}
-        <div className="flex items-center justify-between bg-gray-800/30 rounded-lg p-3 border border-gray-700/30">
+        {/* <div className="flex items-center justify-between bg-gray-800/30 rounded-lg p-3 border border-gray-700/30">
           <div className="flex items-center space-x-3">
             <div className={`w-2 h-2 rounded-full ${csvFileExists ? 'bg-green-400' : 'bg-yellow-400'}`}></div>
             <span className="text-sm text-gray-300">
@@ -598,11 +600,10 @@ const LiveTrafficMonitor: React.FC = () => {
               <span>Upload File</span>
             </button>
           </div>
-        </div>
-
+        </div> */}
 
         {/* Webhook Configuration */}
-        <div className="bg-gray-800/30 rounded-lg p-3 border border-gray-700/30">
+        {/* <div className="bg-gray-800/30 rounded-lg p-3 border border-gray-700/30">
           <div className="flex items-center justify-between mb-2">
             <label className="text-sm font-medium text-gray-300">n8n Webhook URL:</label>
             <span className="text-xs text-gray-400">CSV File Upload Destination</span>
@@ -619,119 +620,187 @@ const LiveTrafficMonitor: React.FC = () => {
             <Upload className="w-3 h-3" />
             <span>Uploads CSV file with 83 flow features as multipart/form-data</span>
           </div>
-        </div>
-
+        </div> */}
 
         {/* Error Display */}
-        {error && (
+        {(error || packetsError) && (
           <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
             <div className="flex items-center space-x-2">
               <AlertCircle className="w-4 h-4 text-red-400" />
-              <span className="text-sm text-red-400">{error}</span>
+              <span className="text-sm text-red-400">{error || packetsError}</span>
             </div>
           </div>
         )}
       </div>
 
-
       <div className="overflow-hidden">
+        {/* Show current packet details */}
+        {currentPacket && (
+          <div className="mb-4 p-4 bg-gray-800/30 rounded-lg border border-cyan-500/20">
+            <div className="text-xs text-gray-400 mb-2 font-medium">Current Packet:</div>
+            <div className="grid grid-cols-4 gap-y-1 gap-x-6 text-xs">
+              <div>
+                <span className="text-gray-400">ID:</span>
+                <span className="text-cyan-400 font-mono ml-1">{currentPacket.id}</span>
+              </div>
+              <div>
+                <span className="text-gray-400">Time:</span>
+                <span className="text-cyan-400 font-mono ml-1">{currentPacket.time ?? 'N/A'}</span>
+              </div>
+              <div>
+                <span className="text-gray-400">Src:</span>
+                <span className="text-cyan-400 font-mono ml-1">{currentPacket.sourceIP}</span>
+              </div>
+              <div>
+                <span className="text-gray-400">Dst:</span>
+                <span className="text-cyan-400 font-mono ml-1">{currentPacket.destinationIP}</span>
+              </div>
+              <div>
+                <span className="text-gray-400">Proto:</span>
+                <span className="text-cyan-400 font-mono ml-1">{currentPacket.protocol}</span>
+              </div>
+              <div>
+                <span className="text-gray-400">Src Port:</span>
+                <span className="text-cyan-400 font-mono ml-1">{currentPacket.srcPort}</span>
+              </div>
+              <div>
+                <span className="text-gray-400">Dst Port:</span>
+                <span className="text-cyan-400 font-mono ml-1">{currentPacket.dstPort}</span>
+              </div>
+              <div>
+                <span className="text-gray-400">Label:</span>
+                <span className="text-cyan-400 font-mono ml-1">{currentPacket.label ?? 'N/A'}</span>
+              </div>
+              <div>
+                <span className="text-gray-400">Status:</span>
+                <span className="text-cyan-400 font-mono ml-1">{currentPacket.status}</span>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="overflow-x-auto scrollbar-thin scrollbar-track-gray-800/30 scrollbar-thumb-gray-600/50">
           <table className="w-full text-sm min-w-[800px]">
             <thead>
               <tr className="border-b border-gray-700/50">
+                <th className="text-left py-3 px-3 text-gray-300 font-medium whitespace-nowrap">ID</th>
                 <th className="text-left py-3 px-3 text-gray-300 font-medium whitespace-nowrap">Time</th>
                 <th className="text-left py-3 px-3 text-gray-300 font-medium whitespace-nowrap">Source IP</th>
                 <th className="text-left py-3 px-3 text-gray-300 font-medium whitespace-nowrap">Dest IP</th>
                 <th className="text-left py-3 px-3 text-gray-300 font-medium whitespace-nowrap">Protocol</th>
-                <th className="text-left py-3 px-3 text-gray-300 font-medium whitespace-nowrap">Size</th>
-                <th className="text-left py-3 px-3 text-gray-300 font-medium whitespace-nowrap">Port</th>
-                <th className="text-left py-3 px-3 text-gray-300 font-medium whitespace-nowrap">Flags</th>
-                <th className="text-left py-3 px-3 text-gray-300 font-medium whitespace-nowrap">Status</th>
-                <th className="text-left py-3 px-3 text-gray-300 font-medium whitespace-nowrap">Country</th>
-                <th className="text-left py-3 px-3 text-gray-300 font-medium whitespace-nowrap">Action</th>
+                <th className="text-left py-3 px-3 text-gray-300 font-medium whitespace-nowrap">Flow Duration</th>
+                <th className="text-left py-3 px-3 text-gray-300 font-medium whitespace-nowrap">Src Port</th>
+                <th className="text-left py-3 px-3 text-gray-300 font-medium whitespace-nowrap">Dst Port</th>
+                {/* <th className="text-left py-3 px-3 text-gray-300 font-medium whitespace-nowrap">Flags</th> */}
+                {/* <th className="text-left py-3 px-3 text-gray-300 font-medium whitespace-nowrap">AI Prediction</th> */}
+                {/* <th className="text-left py-3 px-3 text-gray-300 font-medium whitespace-nowrap">Country</th> */}
+                {/* <th className="text-left py-3 px-3 text-gray-300 font-medium whitespace-nowrap">Action</th> */}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700/30">
-              {packets.map((packet, index) => (
-                <tr
-                  key={packet.id}
-                  className={`hover:bg-gray-800/30 transition-colors ${
-                    index === 0 && isAnyTrafficActive ? 'bg-cyan-500/5 animate-pulse' : ''
-                  }`}
-                >
-                  <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">
-                    {packet.timestamp}
-                  </td>
-                  <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">
-                    {packet.sourceIP}
-                  </td>
-                  <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">
-                    {packet.destinationIP}
-                  </td>
-                  <td className="py-2 px-3 whitespace-nowrap">
-                    <span className="px-2 py-1 text-xs bg-blue-500/10 text-blue-400 rounded border border-blue-500/20">
-                      {packet.protocol}
-                    </span>
-                  </td>
-                  <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">
-                    {packet.packetSize}B
-                  </td>
-                  <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">
-                    {packet.port}
-                  </td>
-                  <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">
-                    {packet.flags}
-                  </td>
-                  <td className="py-2 px-3 whitespace-nowrap">
-                    <span className={`inline-flex items-center px-2 py-1 text-xs rounded border ${getStatusBg(packet.status)}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${getStatusColor(packet.status)} ${isAnyTrafficActive ? 'animate-pulse' : ''}`}></span>
-                      <span className={getStatusColor(packet.status)}>{packet.status}</span>
-                    </span>
-                  </td>
-                  <td className="py-2 px-3 text-gray-300 text-xs whitespace-nowrap">
-                    {packet.country}
-                  </td>
-                  <td className="py-2 px-3 whitespace-nowrap">
-                    <span className={`px-2 py-1 text-xs rounded border ${
-                      packet.action === 'Allow'
-                        ? 'bg-green-500/10 text-green-400 border-green-500/20'
-                        : 'bg-red-500/10 text-red-400 border-red-500/20'
-                    }`}>
-                      {packet.action}
-                    </span>
+              {packetsLoading && displayedPackets.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="py-8 px-3 text-center text-gray-400">
+                    <div className="flex items-center justify-center space-x-2">
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Loading packets from Supabase...</span>
+                    </div>
                   </td>
                 </tr>
-              ))}
+              ) : displayedPackets.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="py-8 px-3 text-center text-gray-400">
+                    <div className="flex items-center justify-center space-x-2">
+                      <Database className="w-4 h-4" />
+                      <span>No packets found in database</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                sortedPackets.map((packet, index) => (
+                  <tr
+                    key={packet.id}
+                    className={`hover:bg-gray-800/30 transition-colors ${
+                      index === 0 && isAnyTrafficActive ? 'bg-cyan-500/5 animate-pulse' : ''
+                    }`}
+                  >
+                    <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">{packet.id}</td>
+                    <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">
+                      {packet.time ?? 'N/A'}
+                    </td>
+                    <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">
+                      {packet.sourceIP}
+                    </td>
+                    <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">
+                      {packet.destinationIP}
+                    </td>
+                    <td className="py-2 px-3 whitespace-nowrap">
+                      <span className="px-2 py-1 text-xs bg-blue-500/10 text-blue-400 rounded border border-blue-500/20">
+                        {packet.protocol}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">
+                      {packet.flowDuration}
+                    </td>
+                    <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">
+                      {packet.srcPort}
+                    </td>
+                    <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">
+                      {packet.dstPort}
+                    </td>
+                    {/* <td className="py-2 px-3 whitespace-nowrap">
+                      <span className={`inline-flex items-center px-2 py-1 text-xs rounded border ${getStatusBg(packet.status)}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${getStatusColor(packet.status)} ${isAnyTrafficActive ? 'animate-pulse' : ''}`}></span>
+                        <span className={getStatusColor(packet.status)}>{packet.status}</span>
+                      </span>
+                    </td> */}
+                    {/* <td className="py-2 px-3 text-gray-300 text-xs whitespace-nowrap">
+                      {packet.country}
+                    </td>
+                    <td className="py-2 px-3 whitespace-nowrap">
+                      <span className={`px-2 py-1 text-xs rounded border ${
+                        packet.action === 'Allow'
+                          ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                          : 'bg-red-500/10 text-red-400 border-red-500/20'
+                      }`}>
+                        {packet.action}
+                      </span>
+                    </td> */}
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
-
-      <div className="mt-4 flex items-center justify-between text-xs text-gray-400">
-        <span>Showing {packets.length} recent packets</span>
+      {/* <div className="mt-4 flex items-center justify-between text-xs text-gray-400">
+        <span>
+          {packetsLoading ? 'Loading...' : `Showing ${packets.length} packets from Supabase`}
+        </span>
         <div className="flex items-center space-x-4">
           {isDemoTrafficLive && (
             <span className="flex items-center space-x-1">
               <Upload className="w-3 h-3 text-orange-400" />
-              <span>Demo active → CSV file → n8n</span>
+              <span>Demo active → CSV file → n8n → Supabase</span>
             </span>
           )}
           {isLiveTrafficLive && (
             <span className="flex items-center space-x-1">
               <Network className="w-3 h-3 text-green-400" />
-              <span>Live capture → {getFriendlyInterfaceName(selectedInterface)} → CSV → n8n</span>
+              <span>Live capture → {getFriendlyInterfaceName(selectedInterface)} → ML → Supabase</span>
             </span>
           )}
           {!isAnyTrafficActive && (
-            <span>Traffic monitoring stopped</span>
+            <span className="flex items-center space-x-1">
+              <Database className="w-3 h-3 text-cyan-400" />
+              <span>Displaying stored predictions from Supabase</span>
+            </span>
           )}
-        </div>
-      </div>
+        </div> 
+      </div> */}
     </div>
   );
 };
-
 
 export default LiveTrafficMonitor;
 

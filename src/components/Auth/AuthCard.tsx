@@ -86,33 +86,10 @@ const AuthCard: React.FC<AuthCardProps> = ({ onLogin }) => {
       } else {
         // Login flow - first authenticate with password
         const { data, error } = await authHelpers.signIn(email, password);
-        
         if (error) {
           setError(error.message);
         } else if (data.user) {
-          // Check if user email is verified
-          if (!data.user.email_confirmed_at) {
-            setError('Please verify your email before logging in. Check your inbox for the verification link.');
-            setIsLoading(false);
-            return;
-          }
-
-          // Sign out the user immediately after successful password verification
-          await authHelpers.signOut();
-
-          // Store email and send OTP for additional verification
-          setPendingEmail(email);
-          
-          // Send OTP to user's email for additional security
-          const { error: otpError } = await authHelpers.sendOTPForVerification(email);
-          
-          if (otpError) {
-            setError(otpError.message);
-            console.error('OTP sending failed:', otpError);
-          } else {
-            // Show OTP verification modal
-            setShowOTPVerification(true);
-          }
+          onLogin(data.user);
         }
       }
     } catch (err) {

@@ -7,7 +7,7 @@ import time
 from csv_webhook_sender import CSVWebhookSender
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=["http://localhost:5173"])
 
 # Global variables to track the senders
 csv_sender = None
@@ -21,7 +21,7 @@ def start_demo_traffic():
     
     try:
         data = request.get_json() or {}
-        webhook_url = data.get('webhook_url', 'https://trialover098754321.app.n8n.cloud/webhook/646e1ad7-dd61-41b2-9893-997ee6157030')
+        webhook_url = data.get('webhook_url', 'https://metasage-ai.app.n8n.cloud/webhook/e8525f42-b2c8-4432-9844-c723d6fe5ba9')
         
         # Check if already running
         if csv_sender and csv_sender.is_running:
@@ -129,7 +129,7 @@ def send_csv_once():
     """Send CSV file once to webhook"""
     try:
         data = request.get_json() or {}
-        webhook_url = data.get('webhook_url', 'https://trialover098754321.app.n8n.cloud/webhook/646e1ad7-dd61-41b2-9893-997ee6157030')
+        webhook_url = data.get('webhook_url', 'https://metasage-ai.app.n8n.cloud/webhook/e8525f42-b2c8-4432-9844-c723d6fe5ba9')
         
         # Create temporary sender
         temp_sender = CSVWebhookSender(webhook_url)
@@ -401,7 +401,7 @@ def health_check():
         'csv_file_exists': csv_exists,
         'csv_file': 'complete_flow_features.csv',
         'upload_type': 'file_upload',
-        'webhook_url': 'https://trialover098754321.app.n8n.cloud/webhook/646e1ad7-dd61-41b2-9893-997ee6157030',
+        'webhook_url': 'https://metasage-ai.app.n8n.cloud/webhook/e8525f42-b2c8-4432-9844-c723d6fe5ba9',
         'live_capture_available': live_available,
         'available_interfaces': [iface['friendly_name'] for iface in interfaces[:5]]  # Limit to first 5
     })
@@ -411,7 +411,7 @@ if __name__ == '__main__':
     print(f"🚀 CSV Webhook API starting on port {port}")
     print(f"📊 Ready to send complete_flow_features.csv file to n8n webhook")
     print(f"📄 CSV file path: complete_flow_features.csv")
-    print(f"📡 Default webhook: https://trialover098754321.app.n8n.cloud/webhook/646e1ad7-dd61-41b2-9893-997ee6157030")
+    print(f"📡 Default webhook: https://metasage-ai.app.n8n.cloud/webhook/e8525f42-b2c8-4432-9844-c723d6fe5ba9")
     print(f"🔴 Live traffic capture available")
     
     app.run(host='0.0.0.0', port=port, debug=True)

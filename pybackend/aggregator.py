@@ -19,12 +19,13 @@ PROCESSED_BATCH_DIR = "processed_batches"
 ROWS_PER_BATCH_UNIT = 10  # Batches will have 10, 20, 30, etc. rows
 
 
-N8N_WEBHOOK_URL = "https://trialover098754321.app.n8n.cloud/webhook/646e1ad7-dd61-41b2-9893-997ee6157030"
+N8N_WEBHOOK_URL = "https://metasage-ai.app.n8n.cloud/webhook/e8525f42-b2c8-4432-9844-c723d6fe5ba9"
 POLLING_INTERVAL_SECONDS = 0.5  # How often to check for new files
 FILE_COMPLETION_CHECK_TIME = 0.25 # Wait time to ensure a file is fully written
 
 
 stop_event = threading.Event()
+LAST_TIMESTAMP_FILE = 'last_live_timestamp.txt'
 
 
 # --- Helper Functions ---
@@ -65,6 +66,18 @@ def is_file_finished_writing(file_path):
         return False
 
 
+def read_last_timestamp(filename):
+    try:
+        with open(filename, 'r') as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return None
+
+def write_last_timestamp(filename, timestamp):
+    with open(filename, 'w') as f:
+        f.write(str(timestamp))
+
+
 # --- The Core Aggregator Logic ---
 def aggregate_and_send_task():
     print(f"[{time.strftime('%H:%M:%S')}] 📡  Aggregator process started. Watching '{RAW_CAPTURE_DIR}'.")
@@ -73,6 +86,7 @@ def aggregate_and_send_task():
     processed_raw_files = set()  # Keeps track of files we've already ingested
     batch_counter = 0
     header = None
+    last_sent_timestamp = read_last_timestamp(LAST_TIMESTAMP_FILE)
 
 
     while not stop_event.is_set():
@@ -112,6 +126,13 @@ def aggregate_and_send_task():
             print(f"[{time.strftime('%H:%M:%S')}] ✨  Buffer has {len(data_buffer)} rows. Creating a batch of {rows_to_batch} rows.")
            
             batch_to_send_df = data_buffer.iloc[:rows_to_batch]
+            # Filter by timestamp
+            if 'time' in batch_to_send_df.columns:
+                if last_sent_timestamp:
+                    batch_to_send_df = batch_to_send_df[batch_to_send_df['time'] > last_sent_timestamp]
+            if batch_to_send_df.empty:
+                time.sleep(POLLING_INTERVAL_SECONDS)
+                continue
             data_buffer = data_buffer.iloc[rows_to_batch:].reset_index(drop=True)
            
             batch_counter += 1
@@ -119,6 +140,10 @@ def aggregate_and_send_task():
             batch_to_send_df.to_csv(batch_filepath, index=False, header=header)
            
             if send_file_webhook(batch_filepath, N8N_WEBHOOK_URL):
+                # Update last sent timestamp
+                if 'time' in batch_to_send_df.columns:
+                    max_time = batch_to_send_df['time'].max()
+                    write_last_timestamp(LAST_TIMESTAMP_FILE, max_time)
                 os.remove(batch_filepath)
            
             print(f"[{time.strftime('%H:%M:%S')}] 📊  Buffer now has {len(data_buffer)} remaining rows.")
@@ -149,7 +174,7 @@ if __name__ == "__main__":
         if not os.path.exists(directory):
             print(f"Creating missing directory: '{directory}'")
             os.makedirs(directory)
-           
+# Do NOT delete or clean up RAW_CAPTURE_DIR here.
     try:
         aggregate_and_send_task()
     except KeyboardInterrupt:

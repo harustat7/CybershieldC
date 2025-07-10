@@ -30,7 +30,7 @@ export class UpdatedDemoTrafficApi {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          webhook_url: config.webhookUrl || 'https://metasage-ai.app.n8n.cloud/webhook-test/79975fb8-b60c-4261-a447-77ab1df4d99c'
+          webhook_url: config.webhookUrl || 'https://metasage-ai.app.n8n.cloud/webhook/e8525f42-b2c8-4432-9844-c723d6fe5ba9'
         }),
       });
 
@@ -103,7 +103,7 @@ export class UpdatedDemoTrafficApi {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          webhook_url: config.webhookUrl || 'https://metasage-ai.app.n8n.cloud/webhook-test/79975fb8-b60c-4261-a447-77ab1df4d99c'
+          webhook_url: config.webhookUrl || 'https://metasage-ai.app.n8n.cloud/webhook/e8525f42-b2c8-4432-9844-c723d6fe5ba9'
         }),
       });
 

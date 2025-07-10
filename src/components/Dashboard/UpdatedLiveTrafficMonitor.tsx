@@ -8,7 +8,7 @@ const UpdatedLiveTrafficMonitor: React.FC = () => {
   const [isDemoTrafficLive, setIsDemoTrafficLive] = useState(false);
   const [isLiveTrafficLive, setIsLiveTrafficLive] = useState(false);
   const [isDemoApiConnected, setIsDemoApiConnected] = useState(false);
-  const [webhookUrl, setWebhookUrl] = useState('https://metasage-ai.app.n8n.cloud/webhook-test/79975fb8-b60c-4261-a447-77ab1df4d99c');
+  const [webhookUrl, setWebhookUrl] = useState('https://metasage-ai.app.n8n.cloud/webhook/e8525f42-b2c8-4432-9844-c723d6fe5ba9');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [csvFileExists, setCsvFileExists] = useState(false);
@@ -317,7 +317,7 @@ const UpdatedLiveTrafficMonitor: React.FC = () => {
             onChange={(e) => setWebhookUrl(e.target.value)}
             disabled={isDemoTrafficLive}
             className="w-full px-3 py-2 bg-gray-700/50 border border-gray-600 rounded text-white text-sm placeholder-gray-400 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            placeholder="https://metasage-ai.app.n8n.cloud/webhook-test/79975fb8-b60c-4261-a447-77ab1df4d99c"
+            placeholder="https://metasage-ai.app.n8n.cloud/webhook/e8525f42-b2c8-4432-9844-c723d6fe5ba9"
           />
           <div className="mt-2 text-xs text-blue-400 flex items-center space-x-1">
             <Upload className="w-3 h-3" />
@@ -362,7 +362,7 @@ const UpdatedLiveTrafficMonitor: React.FC = () => {
                   }`}
                 >
                   <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">
-                    {packet.timestamp}
+                    {packet.time ?? 'N/A'}
                   </td>
                   <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">
                     {packet.sourceIP}

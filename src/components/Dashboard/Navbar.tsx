@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Shield, Brain, BarChart3, FileText, Settings, LogOut } from 'lucide-react';
+import { authHelpers } from '../../lib/supabase';
 
 interface NavbarProps {
   onLogout: () => void;
@@ -9,6 +10,22 @@ interface NavbarProps {
 const Navbar: React.FC<NavbarProps> = ({ onLogout }) => {
   const navigate = useNavigate();
   const location = useLocation();
+
+  const [userName, setUserName] = useState<string>('');
+  const [userEmail, setUserEmail] = useState<string>('');
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { user } = await authHelpers.getCurrentUser();
+      if (user) {
+        setUserEmail(user.email || '');
+        // Try to get full_name from user_metadata or user data
+        const fullName = user.user_metadata?.full_name;
+        setUserName(fullName || user.email || '');
+      }
+    };
+    fetchUser();
+  }, []);
 
   const menuItems = [
     { icon: BarChart3, label: 'Live Analysis', path: '/' },
@@ -59,8 +76,8 @@ const Navbar: React.FC<NavbarProps> = ({ onLogout }) => {
           {/* User Actions */}
           <div className="flex items-center space-x-4">
             <div className="text-right hidden sm:block">
-              <p className="text-sm text-white">Security Analyst</p>
-              <p className="text-xs text-gray-400">admin@cybershield.com</p>
+              <p className="text-sm text-white">{userName || 'User'}</p>
+              <p className="text-xs text-gray-400">{userEmail || ''}</p>
             </div>
             <button
               onClick={onLogout}

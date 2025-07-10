@@ -31,7 +31,7 @@ PACKET_CHUNK_SIZE = 500
 
 
 # Set a very long duration to run until manually stopped with Ctrl+C.
-CAPTURE_DURATION_SECONDS = 180  # 24 hours
+CAPTURE_DURATION_SECONDS = 86400  # 24 hours
 
 
 # --- Main Execution ---
@@ -49,11 +49,11 @@ if __name__ == "__main__":
 
     # --- Directory Setup ---
     # This ensures a clean start every time the script is run.
-    if os.path.exists(RAW_CAPTURE_DIR):
-        print(f"Found existing '{RAW_CAPTURE_DIR}' directory. Removing it for a clean start.")
-        shutil.rmtree(RAW_CAPTURE_DIR)
+if not os.path.exists(RAW_CAPTURE_DIR):
     print(f"Creating new, empty directory: '{RAW_CAPTURE_DIR}'")
     os.makedirs(RAW_CAPTURE_DIR)
+else:
+    print(f"Using existing directory: '{RAW_CAPTURE_DIR}'")
 
 
     # This is the base filename pyflowmeter will use.

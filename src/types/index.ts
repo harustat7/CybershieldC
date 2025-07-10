@@ -5,17 +5,16 @@ export interface User {
 }
 
 export interface NetworkPacket {
-  id: string;
-  timestamp: string;
-  sourceIP: string;
-  destinationIP: string;
+  id: number;
+  time: string | null; // time without time zone, can be null
+  sourceIP: string; // src_ip
+  destinationIP: string; // dest_ip
   protocol: string;
-  packetSize: number;
-  flags: string;
-  port: number;
-  status: 'normal' | 'suspicious' | 'malicious';
-  country: string;
-  action: 'Allow' | 'Deny';
+  srcPort: number;
+  dstPort: number;
+  flowDuration: number;
+  label?: string | null;
+  status: string; // derived from label
   userFlagged?: {
     attackType: string;
     flaggedAt: string;
@@ -31,10 +30,23 @@ export interface AttackDetection {
   timestamp: string;
   description: string;
   affectedSystems: number;
+  prediction:string;
   userFlagged?: {
     attackType: string;
     flaggedAt: string;
   };
+}
+
+export interface SupabasePacket {
+  id: number;
+  time: string | null;
+  src_ip: string;
+  dest_ip: string;
+  protocol: string;
+  src_port: number;
+  dst_port: number;
+  flow_duration: number;
+  label?: string | null;
 }
 
 export interface AttackHistoryItem {
@@ -84,24 +96,20 @@ export type AuthMode = 'login' | 'signup';
 
 export const ATTACK_TYPES = {
   APT: [
-    'APT - Pivoting',
-    'APT - LateralMovement',
-    'APT - Reconnaissance',
-    'APT - DataExfiltration',
-    'APT - InitialCompromise'
+    'Pivoting',
+    'LateralMovement',
+    'Reconnaissance',
+    'DataExfiltration',
+    'InitialCompromise'
   ],
   DDOS: [
-    'DDoS - DrDoS_DNS',
-    'DDoS - DrDoS_LDAP',
-    'DDoS - DrDoS_MSSQL',
-    'DDoS - DrDoS_NetBIOS',
-    'DDoS - DrDoS_NTP',
-    'DDoS - DrDoS_SSDP',
-    'DDoS - Syn',
-    'DDoS - DrDoS_UDP',
-    'DDoS - UDP-lag'
+    'DNS',
+    'MSSQL',
+    'NTP',
+    'SSDP',
+    'Syn'
   ],
   OTHER: [
-    'Normal Traffic'
+    'Normal'
   ]
 } as const;

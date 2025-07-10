@@ -18,7 +18,7 @@ OUTPUT_CSV_BASE_NAME = "traffic_chunked.csv"
 CHUNK_OUTPUT_DIR = "chunk_data"
 PACKET_CHUNK_SIZE = 100
 CAPTURE_DURATION_SECONDS = 180
-N8N_WEBHOOK_URL = "https://metasage-ai.app.n8n.cloud/webhook/79975fb8-b60c-4261-a447-77ab1df4d99c"
+N8N_WEBHOOK_URL = "https://metasage-ai.app.n8n.cloud/webhook/e8525f42-b2c8-4432-9844-c723d6fe5ba9"
 POLLING_INTERVAL_SECONDS = 0.5
 FILE_COMPLETION_CHECK_TIME = 0.25
 

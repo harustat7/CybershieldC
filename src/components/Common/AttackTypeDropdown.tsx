@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import { ChevronDown, Flag, Check, CheckCircle } from 'lucide-react';
 import { ATTACK_TYPES } from '../../types';
 
@@ -20,6 +21,21 @@ const AttackTypeDropdown: React.FC<AttackTypeDropdownProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+
+  useEffect(() => {
+    if (isOpen && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setDropdownStyle({
+        position: 'absolute',
+        top: rect.bottom + window.scrollY + 4,
+        left: rect.left + window.scrollX,
+        zIndex: 9999,
+        width: 256 // 64 * 4 px (w-64)
+      });
+    }
+  }, [isOpen]);
 
   const allAttackTypes = [
     ...ATTACK_TYPES.APT,
@@ -50,6 +66,7 @@ const AttackTypeDropdown: React.FC<AttackTypeDropdownProps> = ({
     return (
       <div className="relative">
         <button
+          ref={buttonRef}
           onClick={() => !disabled && setIsOpen(!isOpen)}
           disabled={disabled}
           className={`inline-flex items-center space-x-1 ${buttonSize} bg-green-500/10 text-green-400 border border-green-500/20 rounded hover:bg-green-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
@@ -59,8 +76,8 @@ const AttackTypeDropdown: React.FC<AttackTypeDropdownProps> = ({
           {!disabled && <ChevronDown className={`${iconSize} ${isOpen ? 'rotate-180' : ''} transition-transform`} />}
         </button>
 
-        {isOpen && !disabled && (
-          <div className="absolute top-full left-0 mt-1 w-64 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
+        {isOpen && !disabled && ReactDOM.createPortal(
+          <div style={dropdownStyle} className="bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
             <div className="p-2">
               <div className="text-xs text-gray-400 mb-2 font-medium">Change Classification:</div>
               
@@ -100,7 +117,8 @@ const AttackTypeDropdown: React.FC<AttackTypeDropdownProps> = ({
                 </button>
               ))}
             </div>
-          </div>
+          </div>,
+          document.body
         )}
 
         {/* Feedback Popup */}
@@ -117,6 +135,7 @@ const AttackTypeDropdown: React.FC<AttackTypeDropdownProps> = ({
   return (
     <div className="relative">
       <button
+        ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
         disabled={disabled || isLoading}
         className={`inline-flex items-center space-x-1 ${buttonSize} bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded hover:bg-cyan-500/20 hover:text-cyan-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
@@ -126,8 +145,8 @@ const AttackTypeDropdown: React.FC<AttackTypeDropdownProps> = ({
         <ChevronDown className={`${iconSize} ${isOpen ? 'rotate-180' : ''} transition-transform`} />
       </button>
 
-      {isOpen && (
-        <div className="absolute top-full left-0 mt-1 w-64 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
+      {isOpen && ReactDOM.createPortal(
+        <div style={dropdownStyle} className="bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
           <div className="p-2">
             <div className="text-xs text-cyan-400 mb-2 font-medium">APT Attacks:</div>
             {ATTACK_TYPES.APT.map((type) => (
@@ -165,7 +184,8 @@ const AttackTypeDropdown: React.FC<AttackTypeDropdownProps> = ({
               </button>
             ))}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {isLoading && (
