@@ -6,6 +6,40 @@ import { UpdatedDemoTrafficApi } from '../../services/updatedDemoTrafficApi.ts';
 import { LiveTrafficApi } from '../../services/liveTrafficApi';
 import axios from 'axios';
 
+// Add at the top, after imports
+const formatTimeHHMMSS = (dateTimeString: string | null) => {
+  if (!dateTimeString) return 'N/A';
+  // If it's already HH:MM:SS, return as is
+  if (/^\d{2}:\d{2}:\d{2}$/.test(dateTimeString)) return dateTimeString;
+  
+  try {
+    // If it's date+time, extract time part without any timezone conversion
+    const d = new Date(dateTimeString);
+    if (!isNaN(d.getTime())) {
+      // Get the time part directly from the original string to avoid timezone conversion
+      const timeMatch = dateTimeString.match(/(\d{2}:\d{2}:\d{2})/);
+      if (timeMatch) {
+        return timeMatch[1];
+      }
+      // Fallback: use UTC time to avoid timezone conversion
+      const utcTime = d.getUTCHours().toString().padStart(2, '0') + ':' +
+                     d.getUTCMinutes().toString().padStart(2, '0') + ':' +
+                     d.getUTCSeconds().toString().padStart(2, '0');
+      return utcTime;
+    }
+    
+    // Fallback: try splitting by space or T
+    const parts = dateTimeString.split(/[ T]/);
+    if (parts.length > 1 && /^\d{2}:\d{2}:\d{2}/.test(parts[1])) {
+      return parts[1].slice(0, 8);
+    }
+  } catch (error) {
+    console.warn('Error parsing time:', dateTimeString, error);
+  }
+  
+  return dateTimeString;
+};
+
 const LiveTrafficMonitor: React.FC = () => {
   const [isDemoTrafficLive, setIsDemoTrafficLive] = useState(false);
   const [isLiveTrafficLive, setIsLiveTrafficLive] = useState(false);
@@ -16,6 +50,9 @@ const LiveTrafficMonitor: React.FC = () => {
   const [csvFileExists, setCsvFileExists] = useState(false);
   const [isLiveMonitorApiConnected, setIsLiveMonitorApiConnected] = useState(false);
   const LIVE_MONITOR_API_URL = 'http://localhost:8000';
+  
+  // Add state to track when live traffic started
+  const [liveTrafficStartTime, setLiveTrafficStartTime] = useState<Date | null>(null);
  
   // Live traffic specific states
   const [selectedInterface, setSelectedInterface] = useState('Wi-Fi');
@@ -28,35 +65,107 @@ const LiveTrafficMonitor: React.FC = () => {
     uptime: 0
   });
 
+  const isAnyTrafficActive = isDemoTrafficLive || isLiveTrafficLive;
+
   // Use Supabase packets instead of fake data
   const { packets, loading: packetsLoading, error: packetsError, refetch } = useSupabasePackets(25, isDemoTrafficLive || isLiveTrafficLive);
 
+
+  // Filter packets based on live traffic start time
+  const filteredPackets = useMemo(() => {
+    if (!isLiveTrafficLive || !liveTrafficStartTime) {
+      // If not live traffic, show all packets
+      return packets;
+    }
+    // Filter packets to only show those from the last 4 minutes after live traffic started
+    const fourMinutesAgo = new Date(liveTrafficStartTime.getTime() - 4 * 60 * 1000);
+    return packets.filter(packet => {
+      if (!packet.time) return false;
+      try {
+        const packetTime = new Date(packet.time);
+        return packetTime >= fourMinutesAgo;
+      } catch (error) {
+        console.warn('Error parsing packet time:', packet.time, error);
+        return false;
+      }
+    });
+  }, [packets, isLiveTrafficLive, liveTrafficStartTime]);
+
+  // Sort packets in descending order (newest to oldest) for proper display order
+  const sortedFilteredPackets = useMemo(() => {
+    return [...filteredPackets].sort((a, b) => {
+      if (!a.time || !b.time) return 0;
+      return new Date(b.time).getTime() - new Date(a.time).getTime();
+    });
+  }, [filteredPackets]);
+
+  // Now declare all useState/useEffect that use sortedFilteredPackets below this
   // New state for current packet index
   const [currentPacketIndex, setCurrentPacketIndex] = useState(0);
-  const [currentPacket, setCurrentPacket] = useState<NetworkPacket | null>(null);
-  const [displayedPackets, setDisplayedPackets] = useState<NetworkPacket[]>([]);
+  // Remove displayedPackets state and all setDisplayedPackets logic
 
-  // Cycle through packets one by one every second
-  const isTrafficActive = isLiveTrafficLive || isDemoTrafficLive;
+  // Remove streaming/interval logic and related state
+  // Show the most recent 25 packets at once (sliding window, no streaming)
+  const [visiblePackets, setVisiblePackets] = useState<NetworkPacket[]>([]);
+  const [currentPacket, setCurrentPacket] = useState<NetworkPacket | null>(null);
+
+  // Update visiblePackets and currentPacket when sortedFilteredPackets changes
   useEffect(() => {
-    if (!isTrafficActive) return; // Do not update when stopped
-    if (packets.length === 0) {
+    if (!isAnyTrafficActive) {
+      setVisiblePackets([]);
       setCurrentPacket(null);
-      setCurrentPacketIndex(0);
-      setDisplayedPackets([]);
       return;
     }
-    setCurrentPacket(packets[currentPacketIndex]);
-    setDisplayedPackets(prev => {
-      if (prev[0] && prev[0].id === packets[currentPacketIndex].id) return prev;
-      const updated = [packets[currentPacketIndex], ...prev];
-      return updated.slice(0, 25);
-    });
-    const interval = setInterval(() => {
-      setCurrentPacketIndex((prev) => (prev + 1) % packets.length);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [packets, currentPacketIndex, isTrafficActive]);
+    const latestPackets = sortedFilteredPackets.slice(0, 25); // newest to oldest
+    setVisiblePackets(latestPackets);
+    setCurrentPacket(latestPackets.length > 0 ? latestPackets[0] : null);
+  }, [sortedFilteredPackets, isAnyTrafficActive]);
+
+
+  // Sliding window packet display logic
+  useEffect(() => {
+    if (!isAnyTrafficActive) {
+      setVisiblePackets([]);
+      setCurrentPacketIndex(0);
+      return;
+    }
+
+    // Use sorted filtered packets instead of all packets
+    const latestPackets = sortedFilteredPackets.slice(-25);
+    setVisiblePackets(latestPackets);
+
+    // Add packets one by one with sliding window effect
+    if (latestPackets.length > visiblePackets.length) {
+      const newPackets = latestPackets.slice(visiblePackets.length);
+      
+      newPackets.forEach((packet, index) => {
+        setTimeout(() => {
+          setVisiblePackets(prev => {
+            const newDisplayed = [...prev, packet];
+            // Keep only the last 25 packets (sliding window)
+            return newDisplayed.slice(-25);
+          });
+        }, index * 200); // 200ms delay between each packet
+      });
+    } else if (latestPackets.length < visiblePackets.length) {
+      // If we have fewer packets, reset to show all current packets
+      setVisiblePackets(latestPackets);
+    }
+  }, [sortedFilteredPackets, isDemoTrafficLive, isLiveTrafficLive]);
+
+
+  // Track the ID of the most recently added packet for animation
+  const [newPacketId, setNewPacketId] = useState<number | null>(null);
+
+  // When visiblePackets changes, highlight the newest packet
+  useEffect(() => {
+    if (visiblePackets.length > 0) {
+      setNewPacketId(visiblePackets[0].id);
+      const timeout = setTimeout(() => setNewPacketId(null), 1000); // Remove highlight after 1s
+      return () => clearTimeout(timeout);
+    }
+  }, [visiblePackets]);
+
 
   // Check Live Monitor API health
   useEffect(() => {
@@ -74,6 +183,7 @@ const LiveTrafficMonitor: React.FC = () => {
     return () => clearInterval(intervalId);
   }, []);
 
+
   // Poll backend for live status
   useEffect(() => {
     let consecutiveFalseCount = 0;
@@ -83,11 +193,17 @@ const LiveTrafficMonitor: React.FC = () => {
         console.log('[Frontend Poll] live_running:', res.data.live_running);
         if (res.data.live_running) {
           consecutiveFalseCount = 0;
+          const wasNotLive = !isLiveTrafficLive;
           setIsLiveTrafficLive(true);
+          // Only set start time if this is the first time we're detecting live traffic
+          if (wasNotLive) {
+            setLiveTrafficStartTime(new Date());
+          }
         } else {
           consecutiveFalseCount++;
           if (consecutiveFalseCount >= 2) {
             setIsLiveTrafficLive(false);
+            setLiveTrafficStartTime(null); // Reset start time if live traffic stops
           }
         }
       } catch (e) {
@@ -96,13 +212,15 @@ const LiveTrafficMonitor: React.FC = () => {
         consecutiveFalseCount++;
         if (consecutiveFalseCount >= 2) {
           setIsLiveTrafficLive(false);
+          setLiveTrafficStartTime(null); // Reset start time on error
         }
       }
     };
     pollStatus();
     const interval = setInterval(pollStatus, 2000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isLiveTrafficLive]);
+
 
   // Check demo API health and get network interfaces on component mount
   useEffect(() => {
@@ -154,6 +272,7 @@ const LiveTrafficMonitor: React.FC = () => {
       }
     };
 
+
     checkApiHealth();
    
     // Check health every 30 seconds
@@ -181,11 +300,13 @@ const LiveTrafficMonitor: React.FC = () => {
     };
   }, [isLiveTrafficLive, selectedInterface]);
 
+
   const handleGenerateTraffic = async () => {
     if (!isDemoApiConnected) {
       setError('Demo Traffic API is not available. Please start the Python backend.');
       return;
     }
+
 
     setIsLoading(true);
     setError(null);
@@ -207,11 +328,13 @@ const LiveTrafficMonitor: React.FC = () => {
     }
   };
 
+
   const handleSendCSVOnce = async () => {
     if (!isDemoApiConnected) {
       setError('Demo Traffic API is not available. Please start the Python backend.');
       return;
     }
+
 
     setIsLoading(true);
     setError(null);
@@ -232,11 +355,13 @@ const LiveTrafficMonitor: React.FC = () => {
     }
   };
 
+
   const handleStartDemoTraffic = async () => {
     if (!isDemoApiConnected) {
       setError('Demo Traffic API is not available. Please start the Python backend.');
       return;
     }
+
 
     setIsLoading(true);
     setError(null);
@@ -257,6 +382,7 @@ const LiveTrafficMonitor: React.FC = () => {
       setIsLoading(false);
     }
   };
+
 
   const handleStopDemoTraffic = async () => {
     setIsLoading(true);
@@ -279,6 +405,7 @@ const LiveTrafficMonitor: React.FC = () => {
     }
   };
 
+
   const handleStartLiveTraffic = async () => {
     if (!isLiveMonitorApiConnected) {
       setError('Live Monitor API (port 8000) is not connected.');
@@ -292,6 +419,8 @@ const LiveTrafficMonitor: React.FC = () => {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || 'Failed to start monitoring.');
+      // Set the start time when live traffic starts
+      setLiveTrafficStartTime(new Date());
       // setIsLiveTrafficLive(true); // Now handled by polling
     } catch (error: any) {
       setError(error.message);
@@ -300,6 +429,7 @@ const LiveTrafficMonitor: React.FC = () => {
       setIsLoading(false);
     }
   };
+
 
   const handleStopLiveTraffic = async () => {
     setIsLoading(true);
@@ -310,6 +440,8 @@ const LiveTrafficMonitor: React.FC = () => {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || 'Failed to stop monitoring.');
+      // Reset the start time when live traffic stops
+      setLiveTrafficStartTime(null);
       // setIsLiveTrafficLive(false); // Now handled by polling
       setLiveTrafficStats({ packet_count: 0, flows_count: 0, uptime: 0 });
     } catch (error: any) {
@@ -319,6 +451,7 @@ const LiveTrafficMonitor: React.FC = () => {
       setIsLoading(false);
     }
   };
+
 
   // const getStatusColor = (label: NetworkPacket['status']) => {
   //   switch (status) {
@@ -333,6 +466,7 @@ const LiveTrafficMonitor: React.FC = () => {
   //   }
   // };
 
+
   // const getStatusBg = (status: NetworkPacket['status']) => {
   //   switch (status) {
   //     case 'normal':
@@ -346,6 +480,7 @@ const LiveTrafficMonitor: React.FC = () => {
   //   }
   // };
 
+
   const formatUptime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
@@ -353,21 +488,38 @@ const LiveTrafficMonitor: React.FC = () => {
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+
   const getFriendlyInterfaceName = (interfaceName: string) => {
     return interfaceFriendlyNames[interfaceName] || interfaceName;
   };
 
-  const isAnyTrafficActive = isDemoTrafficLive || isLiveTrafficLive;
 
   // Memoized sorted packets in ascending order by time (oldest to newest)
   const sortedPackets = useMemo(() => {
-    return [...displayedPackets].sort((a, b) => {
+    return [...packets].sort((a, b) => {
       if (a.time && b.time) {
         return new Date(a.time).getTime() - new Date(b.time).getTime();
       }
       return a.id - b.id;
     });
-  }, [displayedPackets]);
+  }, [packets]);
+
+
+  // State for current packet display
+  // const [currentPacket, setCurrentPacket] = useState<NetworkPacket | null>(null);
+
+  // Update current packet every 100ms to the latest (top) packet
+  // useEffect(() => {
+  //   if (!displayedPackets.length) {
+  //     setCurrentPacket(null);
+  //     return;
+  //   }
+  //   const interval = setInterval(() => {
+  //     setCurrentPacket(displayedPackets[0]); // Always show the top (newest) packet
+  //   }, 100);
+  //   return () => clearInterval(interval);
+  // }, [displayedPackets]);
+
 
   return (
     <div className="bg-gray-900/50 backdrop-blur-sm border border-cyan-500/20 rounded-xl p-6 h-full">
@@ -408,6 +560,7 @@ const LiveTrafficMonitor: React.FC = () => {
             )}
           </div>
 
+
           {/* Live Traffic Controls */}
           <div className="flex items-center space-x-2">
             <div className="text-xs text-gray-400 font-medium">Live:</div>
@@ -434,6 +587,7 @@ const LiveTrafficMonitor: React.FC = () => {
             )}
           </div>
 
+
           {/* Status Indicator */}
           {/* <div className="flex items-center space-x-2 border-l border-gray-700 pl-4">
             <Database className={`w-5 h-5 ${packets.length > 0 ? 'text-green-400 animate-pulse' : 'text-gray-400'}`} />
@@ -448,6 +602,7 @@ const LiveTrafficMonitor: React.FC = () => {
           </div> */}
         </div>
       </div>
+
 
       {/* Configuration & Status */}
       <div className="mb-4 space-y-3">
@@ -478,6 +633,7 @@ const LiveTrafficMonitor: React.FC = () => {
           </div>
         </div> */}
 
+
         {/* Live Monitor API Status
         <div className="flex items-center justify-between bg-gray-800/30 rounded-lg p-3 border border-gray-700/30">
           <div className="flex items-center space-x-3">
@@ -498,6 +654,7 @@ const LiveTrafficMonitor: React.FC = () => {
           </div>
         </div> */}
 
+
         {/* API Status */}
         {/* <div className="flex items-center justify-between bg-gray-800/30 rounded-lg p-3 border border-gray-700/30">
           <div className="flex items-center space-x-3">
@@ -517,6 +674,7 @@ const LiveTrafficMonitor: React.FC = () => {
             <ExternalLink className="w-3 h-3 text-gray-400" />
           </div>
         </div> */}
+
 
         {/* Live Traffic Configuration */}
         {/* {isDemoApiConnected && (
@@ -574,6 +732,7 @@ const LiveTrafficMonitor: React.FC = () => {
           </div>
         )} */}
 
+
         {/* CSV File Status */}
         {/* <div className="flex items-center justify-between bg-gray-800/30 rounded-lg p-3 border border-gray-700/30">
           <div className="flex items-center space-x-3">
@@ -602,6 +761,7 @@ const LiveTrafficMonitor: React.FC = () => {
           </div>
         </div> */}
 
+
         {/* Webhook Configuration */}
         {/* <div className="bg-gray-800/30 rounded-lg p-3 border border-gray-700/30">
           <div className="flex items-center justify-between mb-2">
@@ -622,6 +782,7 @@ const LiveTrafficMonitor: React.FC = () => {
           </div>
         </div> */}
 
+
         {/* Error Display */}
         {(error || packetsError) && (
           <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
@@ -633,7 +794,21 @@ const LiveTrafficMonitor: React.FC = () => {
         )}
       </div>
 
+
       <div className="overflow-hidden">
+        {/* Live Traffic Filter Status */}
+        {isLiveTrafficLive && liveTrafficStartTime && (
+          <div className="mb-4 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+              <span className="text-sm text-green-400 font-medium">Live Traffic Active</span>
+              <span className="text-xs text-gray-400">
+                (Showing packets from last 4 minutes since {liveTrafficStartTime.toLocaleTimeString()})
+              </span>
+            </div>
+          </div>
+        )}
+        
         {/* Show current packet details */}
         {currentPacket && (
           <div className="mb-4 p-4 bg-gray-800/30 rounded-lg border border-cyan-500/20">
@@ -645,7 +820,7 @@ const LiveTrafficMonitor: React.FC = () => {
               </div>
               <div>
                 <span className="text-gray-400">Time:</span>
-                <span className="text-cyan-400 font-mono ml-1">{currentPacket.time ?? 'N/A'}</span>
+                <span className="text-cyan-400 font-mono ml-1">{formatTimeHHMMSS(currentPacket.time)}</span>
               </div>
               <div>
                 <span className="text-gray-400">Src:</span>
@@ -671,10 +846,10 @@ const LiveTrafficMonitor: React.FC = () => {
                 <span className="text-gray-400">Label:</span>
                 <span className="text-cyan-400 font-mono ml-1">{currentPacket.label ?? 'N/A'}</span>
               </div>
-              <div>
+              {/* <div>
                 <span className="text-gray-400">Status:</span>
                 <span className="text-cyan-400 font-mono ml-1">{currentPacket.status}</span>
-              </div>
+              </div> */}
             </div>
           </div>
         )}
@@ -697,74 +872,37 @@ const LiveTrafficMonitor: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700/30">
-              {packetsLoading && displayedPackets.length === 0 ? (
+              {packetsLoading && visiblePackets.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="py-8 px-3 text-center text-gray-400">
                     <div className="flex items-center justify-center space-x-2">
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Loading packets from Supabase...</span>
+                      <span>Loading packets...</span>
                     </div>
                   </td>
                 </tr>
-              ) : displayedPackets.length === 0 ? (
+              ) : visiblePackets.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="py-8 px-3 text-center text-gray-400">
                     <div className="flex items-center justify-center space-x-2">
                       <Database className="w-4 h-4" />
-                      <span>No packets found in database</span>
+                      <span>No packets found</span>
                     </div>
                   </td>
                 </tr>
               ) : (
-                sortedPackets.map((packet, index) => (
-                  <tr
-                    key={packet.id}
-                    className={`hover:bg-gray-800/30 transition-colors ${
-                      index === 0 && isAnyTrafficActive ? 'bg-cyan-500/5 animate-pulse' : ''
-                    }`}
-                  >
+                visiblePackets.map((packet) => (
+                  <tr key={packet.id} className={`hover:bg-gray-800/30 transition-colors bg-cyan-500/5 animate-pulse ${packet.id === newPacketId ? 'animate-pulse bg-green-900/40' : ''}`}>
                     <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">{packet.id}</td>
-                    <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">
-                      {packet.time ?? 'N/A'}
-                    </td>
-                    <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">
-                      {packet.sourceIP}
-                    </td>
-                    <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">
-                      {packet.destinationIP}
-                    </td>
+                    <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">{formatTimeHHMMSS(packet.time)}</td>
+                    <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">{packet.sourceIP}</td>
+                    <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">{packet.destinationIP}</td>
                     <td className="py-2 px-3 whitespace-nowrap">
-                      <span className="px-2 py-1 text-xs bg-blue-500/10 text-blue-400 rounded border border-blue-500/20">
-                        {packet.protocol}
-                      </span>
+                      <span className="px-2 py-1 text-xs bg-blue-500/10 text-blue-400 rounded border border-blue-500/20">{packet.protocol}</span>
                     </td>
-                    <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">
-                      {packet.flowDuration}
-                    </td>
-                    <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">
-                      {packet.srcPort}
-                    </td>
-                    <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">
-                      {packet.dstPort}
-                    </td>
-                    {/* <td className="py-2 px-3 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2 py-1 text-xs rounded border ${getStatusBg(packet.status)}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${getStatusColor(packet.status)} ${isAnyTrafficActive ? 'animate-pulse' : ''}`}></span>
-                        <span className={getStatusColor(packet.status)}>{packet.status}</span>
-                      </span>
-                    </td> */}
-                    {/* <td className="py-2 px-3 text-gray-300 text-xs whitespace-nowrap">
-                      {packet.country}
-                    </td>
-                    <td className="py-2 px-3 whitespace-nowrap">
-                      <span className={`px-2 py-1 text-xs rounded border ${
-                        packet.action === 'Allow'
-                          ? 'bg-green-500/10 text-green-400 border-green-500/20'
-                          : 'bg-red-500/10 text-red-400 border-red-500/20'
-                      }`}>
-                        {packet.action}
-                      </span>
-                    </td> */}
+                    <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">{packet.flowDuration}</td>
+                    <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">{packet.srcPort}</td>
+                    <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">{packet.dstPort}</td>
                   </tr>
                 ))
               )}
@@ -772,6 +910,7 @@ const LiveTrafficMonitor: React.FC = () => {
           </table>
         </div>
       </div>
+
 
       {/* <div className="mt-4 flex items-center justify-between text-xs text-gray-400">
         <span>
@@ -796,11 +935,12 @@ const LiveTrafficMonitor: React.FC = () => {
               <span>Displaying stored predictions from Supabase</span>
             </span>
           )}
-        </div> 
+        </div>
       </div> */}
     </div>
   );
 };
+
 
 export default LiveTrafficMonitor;
 

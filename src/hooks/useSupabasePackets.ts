@@ -42,7 +42,7 @@ export const useSupabasePackets = (limit: number = 25, isActive: boolean = true)
       const { data, error } = await supabase
         .from('common_data')
         .select('*')
-        .order('time', { ascending: true })
+        .order('time', { ascending: false })
         .limit(limit);
 
       if (error) {

@@ -2,6 +2,39 @@ import React, { useState } from 'react';
 import { History, Search, Filter, Clock, Server, AlertCircle } from 'lucide-react';
 import { useSupabasePackets } from '../../hooks/useSupabasePackets';
 
+const formatTimeHHMMSS = (dateTimeString: string | null) => {
+  if (!dateTimeString) return 'N/A';
+  // If it's already HH:MM:SS, return as is
+  if (/^\d{2}:\d{2}:\d{2}$/.test(dateTimeString)) return dateTimeString;
+  
+  try {
+    // If it's date+time, extract time part without any timezone conversion
+    const d = new Date(dateTimeString);
+    if (!isNaN(d.getTime())) {
+      // Get the time part directly from the original string to avoid timezone conversion
+      const timeMatch = dateTimeString.match(/(\d{2}:\d{2}:\d{2})/);
+      if (timeMatch) {
+        return timeMatch[1];
+      }
+      // Fallback: use UTC time to avoid timezone conversion
+      const utcTime = d.getUTCHours().toString().padStart(2, '0') + ':' +
+                     d.getUTCMinutes().toString().padStart(2, '0') + ':' +
+                     d.getUTCSeconds().toString().padStart(2, '0');
+      return utcTime;
+    }
+    
+    // Fallback: try splitting by space or T
+    const parts = dateTimeString.split(/[ T]/);
+    if (parts.length > 1 && /^\d{2}:\d{2}:\d{2}/.test(parts[1])) {
+      return parts[1].slice(0, 8);
+    }
+  } catch (error) {
+    console.warn('Error parsing time:', dateTimeString, error);
+  }
+  
+  return dateTimeString;
+};
+
 const AttackHistoryLogs: React.FC = () => {
   // Fetch up to 500 packets (adjust as needed)
   const { packets, loading, error } = useSupabasePackets(500, true);
@@ -83,7 +116,7 @@ const AttackHistoryLogs: React.FC = () => {
             ) : (
               filteredPackets.map((p) => (
                 <tr key={p.id} className="hover:bg-gray-800/30 transition-colors">
-                  <td className="py-2 px-3 text-cyan-400 font-mono whitespace-nowrap">{p.time ?? 'N/A'}</td>
+                  <td className="py-2 px-3 text-cyan-400 font-mono whitespace-nowrap">{formatTimeHHMMSS(p.time)}</td>
                   <td className="py-2 px-3 text-gray-300 font-mono whitespace-nowrap">{p.sourceIP}</td>
                   <td className="py-2 px-3 text-gray-300 font-mono whitespace-nowrap">{p.destinationIP}</td>
                   <td className="py-2 px-3 text-gray-300 font-mono whitespace-nowrap">{p.protocol}</td>

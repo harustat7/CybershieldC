@@ -8,6 +8,38 @@ interface DashboardProps {
   onLogout: () => void;
 }
 
+const formatTimeHHMMSS = (dateTimeString: string | null) => {
+  if (!dateTimeString) return 'N/A';
+  if (/^\d{2}:\d{2}:\d{2}$/.test(dateTimeString)) return dateTimeString;
+  
+  try {
+    // If it's date+time, extract time part without any timezone conversion
+    const d = new Date(dateTimeString);
+    if (!isNaN(d.getTime())) {
+      // Get the time part directly from the original string to avoid timezone conversion
+      const timeMatch = dateTimeString.match(/(\d{2}:\d{2}:\d{2})/);
+      if (timeMatch) {
+        return timeMatch[1];
+      }
+      // Fallback: use UTC time to avoid timezone conversion
+      const utcTime = d.getUTCHours().toString().padStart(2, '0') + ':' +
+                     d.getUTCMinutes().toString().padStart(2, '0') + ':' +
+                     d.getUTCSeconds().toString().padStart(2, '0');
+      return utcTime;
+    }
+    
+    // Fallback: try splitting by space or T
+    const parts = dateTimeString.split(/[ T]/);
+    if (parts.length > 1 && /^\d{2}:\d{2}:\d{2}/.test(parts[1])) {
+      return parts[1].slice(0, 8);
+    }
+  } catch (error) {
+    console.warn('Error parsing time:', dateTimeString, error);
+  }
+  
+  return dateTimeString;
+};
+
 const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   return (
     <div className="min-h-screen bg-gray-950">
