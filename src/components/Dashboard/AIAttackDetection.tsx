@@ -3,54 +3,54 @@ import { Brain, Shield, AlertTriangle, Flag } from 'lucide-react';
 import { NetworkPacket } from '../../types';
 import { useSupabasePackets } from '../../hooks/useSupabasePackets';
 import AttackTypeDropdown from '../Common/AttackTypeDropdown';
+import { getAttackLabelString as getAttackDetectionLabel } from './../../services/labelMapping';
+import { getProtocolName } from '../../services/protocolMapping';
+// /**
+//  * A helper function to map the raw attack_type and label from a packet
+//  * to a user-friendly display string, based on the provided business logic.
+//  * @param {NetworkPacket | null} packet The network packet to analyze.
+//  * @returns {string} The human-readable attack label.
+//  */
+// const getAttackLabelString = (packet: NetworkPacket): string => {
+//   console.log("PACKET DEBUG:", packet);
+
+//   // Guard clause for when there is no packet data.
+//   if (!packet || !packet.attack_type) {
+//     // If there's no attack type, just return the raw label if it exists.
+//     return packet?.attack_type?.toString() || 'Analyzing...';
+//   }
 
 
-/**
- * A helper function to map the raw attack_type and label from a packet
- * to a user-friendly display string, based on the provided business logic.
- * @param {NetworkPacket | null} packet The network packet to analyze.
- * @returns {string} The human-readable attack label.
- */
-const getAttackLabelString = (packet: NetworkPacket): string => {
-  console.log("PACKET DEBUG:", packet);
-
-  // Guard clause for when there is no packet data.
-  if (!packet || !packet.attack_type) {
-    // If there's no attack type, just return the raw label if it exists.
-    return packet?.attack_type?.toString() || 'Analyzing...';
-  }
+//   // Ensure the label is treated as a number for the switch cases.
+//   const labelNumber = Number(packet.label);
 
 
-  // Ensure the label is treated as a number for the switch cases.
-  const labelNumber = Number(packet.label);
-
-
-  switch (packet.attack_type) {
-    case 'APT':
-      switch (labelNumber) {
-        case 0: return 'Data Exfiltration';
-        case 1: return 'Initial Compromise';
-        case 2: return 'Lateral Movement';
-        case 3: return 'Normal Traffic';
-        case 4: return 'Pivoting';
-        case 5: return 'Reconnaissance';
-        default: return `Unknown APT (${packet.attack_type})`;
-      }
-    case 'DOS':
-      switch (labelNumber) {
-        case 0: return 'Normal Traffic';
-        case 1: return 'DDOS DNS';
-        case 2: return 'DDOS MSSQL';
-        case 3: return 'DDOS NTP';
-        case 4: return 'DDOS SSDP';
-        case 5: return 'DOS Syn';
-        default: return `Unknown DOS (${packet.attack_type})`;
-      }
-    // Fallback for any other attack_type or if the label is already a word like "Normal".
-    default:
-      return packet.attack_type.toString();
-  }
-};
+//   switch (packet.attack_type) {
+//     case 'APT':
+//       switch (labelNumber) {
+//         case 0: return 'Data Exfiltration';
+//         case 1: return 'Initial Compromise';
+//         case 2: return 'Lateral Movement';
+//         case 3: return 'Normal Traffic';
+//         case 4: return 'Pivoting';
+//         case 5: return 'Reconnaissance';
+//         default: return `Unknown APT (${packet.attack_type})`;
+//       }
+//     case 'DOS':
+//       switch (labelNumber) {
+//         case 0: return 'Normal Traffic';
+//         case 1: return 'DDOS DNS';
+//         case 2: return 'DDOS MSSQL';
+//         case 3: return 'DDOS NTP';
+//         case 4: return 'DDOS SSDP';
+//         case 5: return 'DOS Syn';
+//         default: return `Unknown DOS (${packet.attack_type})`;
+//       }
+//     // Fallback for any other attack_type or if the label is already a word like "Normal".
+//     default:
+//       return packet.attack_type.toString();
+//   }
+// };
 
 
 const formatTimeHHMMSS = (dateTimeString: string | null) => {
@@ -86,9 +86,13 @@ const formatTimeHHMMSS = (dateTimeString: string | null) => {
 };
 
 
-const AIAttackDetection: React.FC = () => {
-  // This hook correctly fetches the single latest packet.
-  const { packets, loading, error } = useSupabasePackets(1, true);
+interface AIAttackDetectionProps {
+  isAnyTrafficActive: boolean;
+  hasPacketsDisplayed: boolean; // Indicates if LiveTrafficMonitor has started showing packets
+}
+
+const AIAttackDetection: React.FC<AIAttackDetectionProps> = ({ isAnyTrafficActive, hasPacketsDisplayed }) => {  // This hook correctly fetches the single latest packet.
+  const { packets, loading, error } = useSupabasePackets(1, isAnyTrafficActive);
  
   const [currentPacket, setCurrentPacket] = useState<NetworkPacket | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -97,6 +101,20 @@ const AIAttackDetection: React.FC = () => {
   const lastPacketId = useRef<number | null>(null);
 
 
+  // This effect correctly updates the view only when a new, unique packet arrives.
+  // useEffect(() => {
+  //   if (packets.length > 0) {
+  //     const latestPacket = packets[0];
+  //     if (latestPacket.id !== lastPacketId.current) {
+  //       setCurrentPacket(latestPacket);
+  //       lastPacketId.current = latestPacket.id;
+  //       setFlagged(false);
+  //       setIsUpdating(true);
+  //       const timer = setTimeout(() => setIsUpdating(false), 1000);
+  //       return () => clearTimeout(timer);
+  //     }
+  //   }
+  // }, [packets]);
   // This effect correctly updates the view only when a new, unique packet arrives.
   useEffect(() => {
     if (packets.length > 0) {
@@ -109,9 +127,15 @@ const AIAttackDetection: React.FC = () => {
         const timer = setTimeout(() => setIsUpdating(false), 1000);
         return () => clearTimeout(timer);
       }
+    } else {
+      // ADD THIS ELSE BLOCK
+      // If no packets are returned by the hook (i.e., Supabase is empty or no data available),
+      // reset the currentPacket display to show "Waiting for packet data..."
+      setCurrentPacket(null);
+      lastPacketId.current = null;
+      setIsUpdating(false); // Ensure any update animation stops
     }
   }, [packets]);
-
 
 
 
@@ -139,18 +163,42 @@ const AIAttackDetection: React.FC = () => {
     );
   }
 
-
   if (!currentPacket) {
     return (
       <div className="bg-gray-900/50 backdrop-blur-sm border border-cyan-500/20 rounded-xl p-6 h-full flex items-center justify-center">
         <div className="text-center">
           <Brain className="w-12 h-12 text-purple-400 mx-auto mb-4 animate-pulse" />
-          <p className="text-gray-400">Waiting for packet data...</p>
-          <p className="text-gray-500 text-sm mt-2">Start traffic monitoring to see predictions</p>
+          {!isAnyTrafficActive ? ( // Case 1: Traffic monitoring is OFF (neither Demo nor Live is active)
+            <>
+              <p className="text-gray-400">No active traffic monitoring.</p>
+              <p className="text-gray-500 text-sm mt-2">Start traffic monitoring to see real-time predictions.</p>
+            </>
+          ) : !hasPacketsDisplayed && loading ? ( // Case 2: Traffic is ON, but LiveTrafficMonitor has NOT displayed packets yet AND we are still loading initial data
+            <>
+              <p className="text-gray-400">Waiting for initial packet data...</p>
+              <p className="text-gray-500 text-sm mt-2">Packets will appear here once analysis begins.</p>
+            </>
+          ) : ( // Case 3: Traffic is ON, LiveTrafficMonitor HAS displayed packets, but currentPacket is null (e.g., filtered out, or temporarily no new packets)
+            <>
+              <p className="text-gray-400">No packets found for analysis.</p>
+              <p className="text-gray-500 text-sm mt-2">Monitoring is active, but no new packets for detection.</p>
+            </>
+          )}
         </div>
       </div>
     );
   }
+  // if (!currentPacket) {
+  //   return (
+  //     <div className="bg-gray-900/50 backdrop-blur-sm border border-cyan-500/20 rounded-xl p-6 h-full flex items-center justify-center">
+  //       <div className="text-center">
+  //         <Brain className="w-12 h-12 text-purple-400 mx-auto mb-4 animate-pulse" />
+  //         <p className="text-gray-400">Waiting for packet data...</p>
+  //         <p className="text-gray-500 text-sm mt-2">Start traffic monitoring to see predictions</p>
+  //       </div>
+  //     </div>
+  //   );
+  // }
 
 
   return (
@@ -184,25 +232,37 @@ const AIAttackDetection: React.FC = () => {
               {/* THIS IS THE ONLY PART OF THE UI THAT HAS BEEN CHANGED             */}
               {/* It now calls the helper function to get the correct display string. */}
               {/* ==================================================================== */}
-              <p className="text-white font-semibold text-lg mb-1">
-                {getAttackLabelString(currentPacket)}
-              </p>
-              <div>Label: {currentPacket?.label ?? 'N/A'}</div>
+                            {/* <p className="text-white font-semibold text-lg mb-1">
+                {getAttackDetectionLabel(currentPacket.attack_type, currentPacket.label)}
+              </p> */}
+              {/* <div>Label: {currentPacket?.label ?? 'N/A'}</div> */}
              
-              <div className="grid grid-cols-2 gap-2 text-sm text-gray-300 mt-2">
+              {/* <div className="grid grid-cols-2 gap-2 text-sm text-gray-300 mt-2">
                 <div><span className="font-semibold text-gray-400">Protocol:</span> {currentPacket.protocol}</div>
                 <div><span className="font-semibold text-gray-400">Time:</span> {formatTimeHHMMSS(currentPacket.time)}</div>
                 <div><span className="font-semibold text-gray-400">Source IP:</span> {currentPacket.sourceIP}:{currentPacket.srcPort}</div>
                 <div><span className="font-semibold text-gray-400">Destination IP:</span> {currentPacket.destinationIP}:{currentPacket.dstPort}</div>
                 <div><span className="font-semibold text-gray-400">Flow Duration:</span> {currentPacket.flowDuration} ms</div>
                 <div><span className="font-semibold text-gray-400">Packet ID:</span> {currentPacket.id}</div>
+              </div> */}
+                            <p className="text-white font-semibold text-lg mb-1">
+                {getAttackDetectionLabel(currentPacket.attack_type, currentPacket.label)}
+              </p>
+             
+              <div className="grid grid-cols-2 gap-2 text-sm text-gray-300 mt-2">
+                <div><span className="font-semibold text-gray-400">Protocol:</span> {getProtocolName(currentPacket.protocol, currentPacket.srcPort, currentPacket.dstPort)}</div>                <div><span className="font-semibold text-gray-400">Time:</span> {formatTimeHHMMSS(currentPacket.time)}</div>
+                <div><span className="font-semibold text-gray-400">Source IP:</span> {currentPacket.sourceIP}:{currentPacket.srcPort}</div>
+                <div><span className="font-semibold text-gray-400">Destination IP:</span> {currentPacket.destinationIP}:{currentPacket.dstPort}</div>
+                <div><span className="font-semibold text-gray-400">Flow Duration:</span> {currentPacket.flowDuration} ms</div>
+                <div><span className="font-semibold text-gray-400">Packet ID:</span> {currentPacket.id}</div>
               </div>
               <div className="mt-3 text-xs text-gray-400 italic">
-                {currentPacket.label && (currentPacket.label.toLowerCase().includes('normal') || currentPacket.label === '3')
-                  ? 'Normal network traffic detected. No threats identified in this packet.'
+                {/* Condition updated to use loose equality (==) for '3' to handle both string and number inputs from currentPacket.label */}
+                {(currentPacket.attack_type?.toLowerCase().includes('normal') || Number(currentPacket.label) === 3 || Number(currentPacket.label) === 0)                  ? 'Normal network traffic detected. No threats identified in this packet.'
                   : 'Malicious activity detected! This packet contains attack patterns and should be blocked.'
                 }
               </div>
+              
             </div>
           </div>
         </div>

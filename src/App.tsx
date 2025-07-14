@@ -110,6 +110,7 @@ function App() {
             <>
               <Route path="/" element={<Dashboard onLogout={handleLogout} />} />
               <Route path="/logs" element={<LogsPage onLogout={handleLogout} />} />
+.
               <Route path="/settings" element={<SettingsPage onLogout={handleLogout} />} />
             </>
           ) : (

@@ -1,5 +1,4 @@
-import React from 'react';
-import Navbar from './Navbar';
+import React, { useState } from 'react';import Navbar from './Navbar';
 import LiveTrafficMonitor from './LiveTrafficMonitor';
 import AIAttackDetection from './AIAttackDetection';
 import AttackHistoryLogs from './AttackHistoryLogs';
@@ -41,6 +40,14 @@ const formatTimeHHMMSS = (dateTimeString: string | null) => {
 };
 
 const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
+    const [isAnyTrafficActiveFromMonitor, setIsAnyTrafficActiveFromMonitor] = useState(false);
+  const [hasPacketsDisplayedFromMonitor, setHasPacketsDisplayedFromMonitor] = useState(false);
+
+  // This callback will be triggered by LiveTrafficMonitor
+  const handleTrafficStatusChange = (activeStatus: boolean, displayedStatus: boolean) => {
+    setIsAnyTrafficActiveFromMonitor(activeStatus);
+    setHasPacketsDisplayedFromMonitor(displayedStatus);
+  };
   return (
     <div className="min-h-screen bg-gray-950">
       {/* Animated Background */}
@@ -63,13 +70,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             {/* Live Traffic Monitor */}
             <div className="lg:col-span-1">
-              <LiveTrafficMonitor />
-            </div>
+              <LiveTrafficMonitor onTrafficStatusChange={handleTrafficStatusChange} />            </div>
             
             {/* AI Attack Detection */}
             <div className="lg:col-span-1">
-              <AIAttackDetection />
-            </div>
+              <AIAttackDetection
+                isAnyTrafficActive={isAnyTrafficActiveFromMonitor}
+                hasPacketsDisplayed={hasPacketsDisplayedFromMonitor}
+              />
+              </div>
           </div>
 
           {/* Attack History Logs */}

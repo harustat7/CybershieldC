@@ -1,3 +1,7 @@
+
+
+
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Activity, Wifi, Play, Square, Zap, Network, AlertCircle, ExternalLink, RefreshCw, Send, Upload, Settings, Monitor, Info, Database } from 'lucide-react';
 import { NetworkPacket } from '../../types';
@@ -5,6 +9,9 @@ import { useSupabasePackets } from '../../hooks/useSupabasePackets';
 import { UpdatedDemoTrafficApi } from '../../services/updatedDemoTrafficApi.ts';
 import { LiveTrafficApi } from '../../services/liveTrafficApi';
 import axios from 'axios';
+import { getProtocolName } from './../../services/protocolMapping.ts'; // <--- ADD THIS LINE
+import { getAttackLabelString as getAttackDetectionLabel } from './../../services/labelMapping';
+
 
 // Add at the top, after imports
 const formatTimeHHMMSS = (dateTimeString: string | null) => {
@@ -40,7 +47,11 @@ const formatTimeHHMMSS = (dateTimeString: string | null) => {
   return dateTimeString;
 };
 
-const LiveTrafficMonitor: React.FC = () => {
+interface LiveTrafficMonitorProps {
+  onTrafficStatusChange: (isAnyTrafficActive: boolean, hasPacketsDisplayed: boolean) => void;
+}
+
+const LiveTrafficMonitor: React.FC<LiveTrafficMonitorProps> = ({ onTrafficStatusChange }) => {
   const [isDemoTrafficLive, setIsDemoTrafficLive] = useState(false);
   const [isLiveTrafficLive, setIsLiveTrafficLive] = useState(false);
   const [isDemoApiConnected, setIsDemoApiConnected] = useState(false);
@@ -120,7 +131,13 @@ const LiveTrafficMonitor: React.FC = () => {
     setVisiblePackets(latestPackets);
     setCurrentPacket(latestPackets.length > 0 ? latestPackets[0] : null);
   }, [sortedFilteredPackets, isAnyTrafficActive]);
-
+  // Notify parent about traffic and display status
+  useEffect(() => {
+    // Only call if the handler is provided
+    if (onTrafficStatusChange) {
+      onTrafficStatusChange(isAnyTrafficActive, visiblePackets.length > 0);
+    }
+  }, [isAnyTrafficActive, visiblePackets.length, onTrafficStatusChange]); // <-- Dependencies
 
   // Sliding window packet display logic
   useEffect(() => {
@@ -832,8 +849,7 @@ const LiveTrafficMonitor: React.FC = () => {
               </div>
               <div>
                 <span className="text-gray-400">Proto:</span>
-                <span className="text-cyan-400 font-mono ml-1">{currentPacket.protocol}</span>
-              </div>
+                <span className="text-cyan-400 font-mono ml-1">{getProtocolName(currentPacket.protocol, currentPacket.srcPort, currentPacket.dstPort)}</span>              </div>
               <div>
                 <span className="text-gray-400">Src Port:</span>
                 <span className="text-cyan-400 font-mono ml-1">{currentPacket.srcPort}</span>
@@ -844,7 +860,7 @@ const LiveTrafficMonitor: React.FC = () => {
               </div>
               <div>
                 <span className="text-gray-400">Label:</span>
-                <span className="text-cyan-400 font-mono ml-1">{currentPacket.label ?? 'N/A'}</span>
+                <span className="text-cyan-400 font-mono ml-1">{getAttackDetectionLabel(currentPacket.attack_type, currentPacket.label)}</span>
               </div>
               {/* <div>
                 <span className="text-gray-400">Status:</span>
@@ -898,7 +914,7 @@ const LiveTrafficMonitor: React.FC = () => {
                     <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">{packet.sourceIP}</td>
                     <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">{packet.destinationIP}</td>
                     <td className="py-2 px-3 whitespace-nowrap">
-                      <span className="px-2 py-1 text-xs bg-blue-500/10 text-blue-400 rounded border border-blue-500/20">{packet.protocol}</span>
+                      <span className="px-2 py-1 text-xs bg-blue-500/10 text-blue-400 rounded border border-blue-500/20">{getProtocolName(packet.protocol, packet.srcPort, packet.dstPort)}</span>
                     </td>
                     <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">{packet.flowDuration}</td>
                     <td className="py-2 px-3 text-gray-300 font-mono text-xs whitespace-nowrap">{packet.srcPort}</td>
