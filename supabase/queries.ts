@@ -5,9 +5,9 @@ import {
   AllTrafficDataDbRow, // Explicitly import AllTrafficDataDbRow for the final fetch
   CommonDataDbRow // Import CommonDataDbRow to fetch the FK
 } from './../src/types/index'; // Corrected import path and removed unused individual OriginalDbRow types
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL!;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY!;
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL!;
-const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 /**

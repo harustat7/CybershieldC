@@ -1,18 +1,45 @@
+// src/components/Common/AttackTypeDropdown.tsx
+
 import React, { useState, useRef, useEffect } from 'react';
 import ReactDOM from 'react-dom';
-import { ChevronDown, Flag, Check, CheckCircle } from 'lucide-react';
-import { ATTACK_TYPES } from '../../types';
+import { ChevronDown, Flag, Check, CheckCircle } from 'lucide-react'; // Removed AlertTriangle import
+import { ATTACK_TYPES, NetworkPacket, FlagRequest } from '../../types';
+import { handleFlagTrafficRequest } from './../../services/flagService'; // Corrected import path for flagService
 
 interface AttackTypeDropdownProps {
-  packetId: string;
+  packetData: NetworkPacket;
   currentFlag?: string;
-  onFlag: (attackType: string) => void;
+  onFlag: () => void;
   disabled?: boolean;
   size?: 'sm' | 'md';
 }
 
+// --- Numerical Mappings (must align with N8N/ML model and backend logic) ---
+const APT_TYPE_MAPPING: Record<string, number> = {
+  'Pivoting': 4,
+  'Lateral Movement': 2,
+  'Reconnaissance': 5,
+  'Data Exfiltration': 0,
+  'Initial Compromise': 1,
+  'Normal (APT Context)': 3,
+};
+
+const DOS_TYPE_MAPPING: Record<string, number> = {
+  'DNS': 1,
+  'MSSQL': 2,
+  'NTP': 3,
+  'SSDP': 4,
+  'Syn': 5,
+  'Normal (DOS Context)': 0,
+};
+
+const OTHER_TYPE_MAPPING: Record<string, number> = {
+    'Normal': 0,
+}
+
+
 const AttackTypeDropdown: React.FC<AttackTypeDropdownProps> = ({
-  packetId,
+  packetData,
   currentFlag,
   onFlag,
   disabled = false,
@@ -20,7 +47,8 @@ const AttackTypeDropdown: React.FC<AttackTypeDropdownProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [showFeedback, setShowFeedback] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false); // For local popup feedback
+  // Removed feedbackMessage and feedbackSuccess states as they are not needed for static feedback
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
 
@@ -32,28 +60,64 @@ const AttackTypeDropdown: React.FC<AttackTypeDropdownProps> = ({
         top: rect.bottom + window.scrollY + 4,
         left: rect.left + window.scrollX,
         zIndex: 9999,
-        width: 256 // 64 * 4 px (w-64)
+        width: 256
       });
     }
   }, [isOpen]);
 
-  const allAttackTypes = [
-    ...ATTACK_TYPES.APT,
-    ...ATTACK_TYPES.DDOS,
-    ...ATTACK_TYPES.OTHER
-  ];
+  const mapStringToNumericalLabel = (attackTypeString: string): number | undefined => {
+    if (APT_TYPE_MAPPING.hasOwnProperty(attackTypeString)) return APT_TYPE_MAPPING[attackTypeString];
+    if (DOS_TYPE_MAPPING.hasOwnProperty(attackTypeString)) return DOS_TYPE_MAPPING[attackTypeString];
+    if (OTHER_TYPE_MAPPING.hasOwnProperty(attackTypeString)) return OTHER_TYPE_MAPPING[attackTypeString];
+    return undefined;
+  };
 
-  const handleSelect = async (attackType: string) => {
+
+  const handleSelect = async (attackTypeString: string) => {
     setIsLoading(true);
+    setIsOpen(false); // Close dropdown immediately upon selection
+
+    // Always show the "Feedback sent!" popup for 3 seconds, as per strict instruction.
+    setShowFeedback(true);
+    setTimeout(() => setShowFeedback(false), 3000);
+
+    const userSelectedAttackTypeNum = mapStringToNumericalLabel(attackTypeString);
+
+    if (userSelectedAttackTypeNum === undefined) {
+        console.error(`[AttackTypeDropdown] Failed to flag: Unknown attack type selected: "${attackTypeString}".`);
+        setIsLoading(false);
+        // The feedback popup is already set to show "Feedback sent!", no change needed here per instructions.
+        return;
+    }
+
+    const flagRequest: FlagRequest = {
+      packetId: packetData.id.toString(),
+      userattackType: userSelectedAttackTypeNum,
+      originalLabel: packetData.label || null,
+      originalAttackType: packetData.attack_type || null,
+      timestamp: packetData.time || null,
+      flowDuration: packetData.flowDuration,
+      sourceIP: packetData.sourceIP,
+      destinationIP: packetData.destinationIP,
+      protocol: packetData.protocol,
+      srcPort: packetData.srcPort,
+      dstPort: packetData.dstPort,
+    };
+
+    console.log("[AttackTypeDropdown] Sending FlagRequest:", flagRequest);
+
     try {
-      await onFlag(attackType);
-      setIsOpen(false);
-      
-      // Show feedback popup
-      setShowFeedback(true);
-      setTimeout(() => setShowFeedback(false), 3000);
+      const result = await handleFlagTrafficRequest(flagRequest);
+      if (result.success) {
+        onFlag(); // Notify parent component (AIAttackDetection) that flagging was successful
+        // Feedback popup already set, no change needed here per instructions.
+      } else {
+        console.error(`[AttackTypeDropdown] Flagging failed: ${result.message}`);
+        // Feedback popup already set, no change needed here per instructions.
+      }
     } catch (error) {
-      console.error('Failed to flag packet:', error);
+      console.error("[AttackTypeDropdown] An unexpected error occurred during flagging:", error);
+      // Feedback popup already set, no change needed here per instructions.
     } finally {
       setIsLoading(false);
     }
@@ -62,6 +126,7 @@ const AttackTypeDropdown: React.FC<AttackTypeDropdownProps> = ({
   const buttonSize = size === 'sm' ? 'px-2 py-1 text-xs' : 'px-3 py-2 text-sm';
   const iconSize = size === 'sm' ? 'w-3 h-3' : 'w-4 h-4';
 
+  // === UI RENDERING LOGIC (STRICTLY PRESERVED AS PER ORIGINAL) ===
   if (currentFlag) {
     return (
       <div className="relative">
@@ -140,8 +205,12 @@ const AttackTypeDropdown: React.FC<AttackTypeDropdownProps> = ({
         disabled={disabled || isLoading}
         className={`inline-flex items-center space-x-1 ${buttonSize} bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded hover:bg-cyan-500/20 hover:text-cyan-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
       >
-        <Flag className={iconSize} />
-        <span className="font-medium">Flag Attack</span>
+        {isLoading ? (
+            <div className="w-4 h-4 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin mr-1"></div>
+        ) : (
+            <Flag className={iconSize} />
+        )}
+        <span className="font-medium">{isLoading ? "Processing..." : "Flag Attack"}</span>
         <ChevronDown className={`${iconSize} ${isOpen ? 'rotate-180' : ''} transition-transform`} />
       </button>
 
@@ -206,3 +275,788 @@ const AttackTypeDropdown: React.FC<AttackTypeDropdownProps> = ({
 };
 
 export default AttackTypeDropdown;
+
+
+
+
+// import React, { useState, useRef, useEffect } from 'react';
+// import ReactDOM from 'react-dom';
+// import { ChevronDown, Flag, Check, CheckCircle } from 'lucide-react';
+// import { ATTACK_TYPES, NetworkPacket, FlagRequest } from '../../types'; // Import NetworkPacket and FlagRequest
+// import { handleFlagTrafficRequest } from './../../services/flagService'; // Import the backend service
+
+// interface AttackTypeDropdownProps {
+//   packetData: NetworkPacket; // CHANGED: Now expecting NetworkPacket object
+//   currentFlag?: string; // KEPT: To control the green checkmark UI state
+//   onFlag: () => void; // CHANGED: Now a simple callback to notify parent about flagging attempt
+//   disabled?: boolean;
+//   size?: 'sm' | 'md';
+// }
+
+// // --- Numerical Mappings (must align with N8N/ML model and backend logic) ---
+// // These are the numerical labels for the attack types as provided
+// const APT_TYPE_MAPPING: Record<string, number> = {
+//   'Pivoting': 4,
+//   'Lateral Movement': 2,
+//   'Reconnaissance': 5,
+//   'Data Exfiltration': 0,
+//   'Initial Compromise': 1,
+//   'Normal (APT Context)': 3,
+// };
+
+// const DOS_TYPE_MAPPING: Record<string, number> = {
+//   'DNS': 1,
+//   'MSSQL': 2,
+//   'NTP': 3,
+//   'SSDP': 4,
+//   'Syn': 5,
+//   'Normal (DOS Context)': 0,
+// };
+
+// const OTHER_TYPE_MAPPING: Record<string, number> = {
+//     'Normal': 0, // Assuming generic 'Normal' maps to DOS Normal (0) for consistency
+// }
+
+
+// const AttackTypeDropdown: React.FC<AttackTypeDropdownProps> = ({
+//   packetData, // Destructure the packetData prop
+//   currentFlag, // Destructure the currentFlag prop
+//   onFlag, // Destructure the onFlag callback
+//   disabled = false,
+//   size = 'sm'
+// }) => {
+//   const [isOpen, setIsOpen] = useState(false);
+//   const [isLoading, setIsLoading] = useState(false);
+//   const [showFeedback, setShowFeedback] = useState(false); // For local popup feedback
+//   const buttonRef = useRef<HTMLButtonElement | null>(null);
+//   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+
+//   useEffect(() => {
+//     if (isOpen && buttonRef.current) {
+//       const rect = buttonRef.current.getBoundingClientRect();
+//       setDropdownStyle({
+//         position: 'absolute',
+//         top: rect.bottom + window.scrollY + 4,
+//         left: rect.left + window.scrollX,
+//         zIndex: 9999,
+//         width: 256 // w-64
+//       });
+//     }
+//   }, [isOpen]);
+
+//   // Helper function to map selected string to its corresponding numerical label
+//   const mapStringToNumericalLabel = (attackTypeString: string): number | undefined => {
+//     if (APT_TYPE_MAPPING.hasOwnProperty(attackTypeString)) return APT_TYPE_MAPPING[attackTypeString];
+//     if (DOS_TYPE_MAPPING.hasOwnProperty(attackTypeString)) return DOS_TYPE_MAPPING[attackTypeString];
+//     if (OTHER_TYPE_MAPPING.hasOwnProperty(attackTypeString)) return OTHER_TYPE_MAPPING[attackTypeString];
+//     return undefined; // If no mapping is found
+//   };
+
+
+//   const handleSelect = async (attackTypeString: string) => {
+//     setIsLoading(true);
+//     setIsOpen(false); // Close dropdown immediately upon selection
+
+//     const userSelectedAttackTypeNum = mapStringToNumericalLabel(attackTypeString);
+
+//     // Validate if the string mapped to a valid number
+//     if (userSelectedAttackTypeNum === undefined) { // Check for undefined specifically
+//         console.error(`[AttackTypeDropdown] Failed to flag: Unknown attack type selected: "${attackTypeString}".`);
+//         setShowFeedback(true); // Show feedback for failure
+//         setTimeout(() => setShowFeedback(false), 3000);
+//         setIsLoading(false);
+//         return;
+//     }
+
+//     // Construct the FlagRequest object
+//     const flagRequest: FlagRequest = {
+//       packetId: packetData.id.toString(), // Get packetId from packetData
+//       userattackType: userSelectedAttackTypeNum, // Pass the numerical label
+//       originalLabel: packetData.label || null, // Original ML label from NetworkPacket
+//       originalAttackType: packetData.attack_type || null, // Original broad type from NetworkPacket
+//       timestamp: packetData.time || null,
+//       flowDuration: packetData.flowDuration,
+//       sourceIP: packetData.sourceIP,
+//       destinationIP: packetData.destinationIP,
+//       protocol: packetData.protocol,
+//       srcPort: packetData.srcPort,
+//       dstPort: packetData.dstPort,
+//     };
+
+//     console.log("[AttackTypeDropdown] Sending FlagRequest:", flagRequest);
+
+//     try {
+//       const result = await handleFlagTrafficRequest(flagRequest); // Call the backend service
+//       if (result.success) {
+//         onFlag(); // Notify parent component (AIAttackDetection) that flagging was successful
+//         setShowFeedback(true); // Show local success feedback popup
+//         setTimeout(() => setShowFeedback(false), 3000);
+//       } else {
+//         console.error(`[AttackTypeDropdown] Flagging failed: ${result.message}`);
+//         setShowFeedback(true); // Show local failure feedback popup
+//         setTimeout(() => setShowFeedback(false), 3000);
+//       }
+//     } catch (error) {
+//       console.error("[AttackTypeDropdown] An unexpected error occurred during flagging:", error);
+//       setShowFeedback(true); // Show local error feedback popup
+//       setTimeout(() => setShowFeedback(false), 3000);
+//     } finally {
+//       setIsLoading(false);
+//     }
+//   };
+
+//   const buttonSize = size === 'sm' ? 'px-2 py-1 text-xs' : 'px-3 py-2 text-sm';
+//   const iconSize = size === 'sm' ? 'w-3 h-3' : 'w-4 h-4';
+
+//   // === UI RENDERING LOGIC (STRICTLY PRESERVED AS PER ORIGINAL) ===
+//   if (currentFlag) {
+//     return (
+//       <div className="relative">
+//         <button
+//           ref={buttonRef}
+//           onClick={() => !disabled && setIsOpen(!isOpen)}
+//           disabled={disabled}
+//           className={`inline-flex items-center space-x-1 ${buttonSize} bg-green-500/10 text-green-400 border border-green-500/20 rounded hover:bg-green-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
+//         >
+//           <Check className={iconSize} />
+//           <span className="truncate max-w-24">{currentFlag.split(' - ')[1] || currentFlag}</span>
+//           {!disabled && <ChevronDown className={`${iconSize} ${isOpen ? 'rotate-180' : ''} transition-transform`} />}
+//         </button>
+
+//         {isOpen && !disabled && ReactDOM.createPortal(
+//           <div style={dropdownStyle} className="bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
+//             <div className="p-2">
+//               <div className="text-xs text-gray-400 mb-2 font-medium">Change Classification:</div>
+              
+//               <div className="text-xs text-cyan-400 mb-2 font-medium">APT Attacks:</div>
+//               {ATTACK_TYPES.APT.map((type) => (
+//                 <button
+//                   key={type}
+//                   onClick={() => handleSelect(type)}
+//                   disabled={isLoading}
+//                   className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded transition-colors disabled:opacity-50"
+//                 >
+//                   {type}
+//                 </button>
+//               ))}
+              
+//               <div className="text-xs text-cyan-400 mb-2 mt-3 font-medium">DDoS Attacks:</div>
+//               {ATTACK_TYPES.DDOS.map((type) => (
+//                 <button
+//                   key={type}
+//                   onClick={() => handleSelect(type)}
+//                   disabled={isLoading}
+//                   className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded transition-colors disabled:opacity-50"
+//                 >
+//                   {type}
+//                 </button>
+//               ))}
+              
+//               <div className="text-xs text-cyan-400 mb-2 mt-3 font-medium">Normal Traffic:</div>
+//               {ATTACK_TYPES.OTHER.map((type) => (
+//                 <button
+//                   key={type}
+//                   onClick={() => handleSelect(type)}
+//                   disabled={isLoading}
+//                   className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded transition-colors disabled:opacity-50"
+//                 >
+//                   {type}
+//                 </button>
+//               ))}
+//             </div>
+//           </div>,
+//           document.body
+//         )}
+
+//         {/* Feedback Popup */}
+//         {showFeedback && (
+//           <div className="absolute top-full left-0 mt-2 bg-green-600 text-white px-3 py-2 rounded-lg shadow-lg z-50 flex items-center space-x-2 animate-fade-in">
+//             <CheckCircle className="w-4 h-4" />
+//             <span className="text-sm font-medium">Feedback sent!</span>
+//           </div>
+//         )}
+//       </div>
+//     );
+//   }
+
+//   return (
+//     <div className="relative">
+//       <button
+//         ref={buttonRef}
+//         onClick={() => setIsOpen(!isOpen)}
+//         disabled={disabled || isLoading}
+//         className={`inline-flex items-center space-x-1 ${buttonSize} bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded hover:bg-cyan-500/20 hover:text-cyan-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
+//       >
+//         {isLoading ? (
+//             <div className="w-4 h-4 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin mr-1"></div>
+//         ) : (
+//             <Flag className={iconSize} />
+//         )}
+//         <span className="font-medium">{isLoading ? "Processing..." : "Flag Attack"}</span>
+//         <ChevronDown className={`${iconSize} ${isOpen ? 'rotate-180' : ''} transition-transform`} />
+//       </button>
+
+//       {isOpen && ReactDOM.createPortal(
+//         <div style={dropdownStyle} className="bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
+//           <div className="p-2">
+//             <div className="text-xs text-cyan-400 mb-2 font-medium">APT Attacks:</div>
+//             {ATTACK_TYPES.APT.map((type) => (
+//               <button
+//                 key={type}
+//                 onClick={() => handleSelect(type)}
+//                 disabled={isLoading}
+//                 className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded transition-colors disabled:opacity-50"
+//               >
+//                 {type}
+//               </button>
+//             ))}
+            
+//             <div className="text-xs text-cyan-400 mb-2 mt-3 font-medium">DDoS Attacks:</div>
+//             {ATTACK_TYPES.DDOS.map((type) => (
+//               <button
+//                 key={type}
+//                 onClick={() => handleSelect(type)}
+//                 disabled={isLoading}
+//                 className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded transition-colors disabled:opacity-50"
+//               >
+//                 {type}
+//               </button>
+//             ))}
+            
+//             <div className="text-xs text-cyan-400 mb-2 mt-3 font-medium">Normal Traffic:</div>
+//             {ATTACK_TYPES.OTHER.map((type) => (
+//               <button
+//                 key={type}
+//                 onClick={() => handleSelect(type)}
+//                 disabled={isLoading}
+//                 className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded transition-colors disabled:opacity-50"
+//               >
+//                 {type}
+//               </button>
+//             ))}
+//           </div>
+//         </div>,
+//         document.body
+//       )}
+
+//       {isLoading && (
+//         <div className="absolute inset-0 flex items-center justify-center bg-gray-800/50 rounded">
+//           <div className="w-4 h-4 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin"></div>
+//         </div>
+//       )}
+
+//       {/* Feedback Popup */}
+//       {showFeedback && (
+//         <div className="absolute top-full left-0 mt-2 bg-green-600 text-white px-3 py-2 rounded-lg shadow-lg z-50 flex items-center space-x-2 animate-fade-in">
+//           <CheckCircle className="w-4 h-4" />
+//           <span className="text-sm font-medium">Feedback sent!</span>
+//         </div>
+//       )}
+//     </div>
+//   );
+// };
+
+// export default AttackTypeDropdown;
+
+
+// if wna incorporate failure in feedback msg -> if row note sent to supabase:
+// src/components/Common/AttackTypeDropdown.tsx
+
+// import React, { useState, useRef, useEffect } from 'react';
+// import ReactDOM from 'react-dom';
+// import { ChevronDown, Flag, Check, CheckCircle } from 'lucide-react';
+// import { ATTACK_TYPES, NetworkPacket, FlagRequest } from '../../types'; // Import NetworkPacket and FlagRequest
+// import { handleFlagTrafficRequest } from '../../api/flagService'; // Import the backend service
+
+// interface AttackTypeDropdownProps {
+//   packetData: NetworkPacket; // Pass the entire NetworkPacket object
+//   currentFlag?: string; // Keep this prop to control the green checkmark UI state
+//   onFlag: () => void; // Keep this original callback to notify parent about *attempting* to flag
+//   disabled?: boolean;
+//   size?: 'sm' | 'md';
+// }
+
+// // --- Numerical Mappings (must align with N8N/ML model and backend's labelMapping) ---
+// // These are the numerical labels for the attack types
+// const APT_TYPE_MAPPING: Record<string, number> = {
+//   'Pivoting': 4,
+//   'Lateral Movement': 2,
+//   'Reconnaissance': 5,
+//   'Data Exfiltration': 0,
+//   'Initial Compromise': 1,
+//   'Normal (APT Context)': 3,
+// };
+
+// const DOS_TYPE_MAPPING: Record<string, number> = {
+//   'DNS': 1,
+//   'MSSQL': 2,
+//   'NTP': 3,
+//   'SSDP': 4,
+//   'Syn': 5,
+//   'Normal (DOS Context)': 0,
+// };
+
+// const OTHER_TYPE_MAPPING: Record<string, number> = {
+//     'Normal': 0, // Assuming generic 'Normal' maps to DOS Normal (0) for consistency
+// }
+
+
+// const AttackTypeDropdown: React.FC<AttackTypeDropdownProps> = ({
+//   packetData,
+//   currentFlag,
+//   onFlag,
+//   disabled = false,
+//   size = 'sm'
+// }) => {
+//   const [isOpen, setIsOpen] = useState(false);
+//   const [isLoading, setIsLoading] = useState(false);
+//   const [showFeedback, setShowFeedback] = useState(false); // For local popup feedback
+//   const [feedbackMessage, setFeedbackMessage] = useState<string>(''); // NEW: To store the specific feedback message
+//   const [feedbackSuccess, setFeedbackSuccess] = useState<boolean>(false); // NEW: To indicate success/failure for styling
+//   const buttonRef = useRef<HTMLButtonElement | null>(null);
+//   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+
+//   useEffect(() => {
+//     if (isOpen && buttonRef.current) {
+//       const rect = buttonRef.current.getBoundingClientRect();
+//       setDropdownStyle({
+//         position: 'absolute',
+//         top: rect.bottom + window.scrollY + 4,
+//         left: rect.left + window.scrollX,
+//         zIndex: 9999,
+//         width: 256 // w-64
+//       });
+//     }
+//   }, [isOpen]);
+
+//   // Helper function to map selected string to its corresponding numerical label
+//   const mapStringToNumericalLabel = (attackTypeString: string): number | undefined => {
+//     if (APT_TYPE_MAPPING.hasOwnProperty(attackTypeString)) return APT_TYPE_MAPPING[attackTypeString];
+//     if (DOS_TYPE_MAPPING.hasOwnProperty(attackTypeString)) return DOS_TYPE_MAPPING[attackTypeString];
+//     if (OTHER_TYPE_MAPPING.hasOwnProperty(attackTypeString)) return OTHER_TYPE_MAPPING[attackTypeString];
+//     return undefined; // If no mapping is found
+//   };
+
+
+//   const handleSelect = async (attackTypeString: string) => {
+//     setIsLoading(true);
+//     setIsOpen(false); // Close dropdown immediately upon selection
+//     setFeedbackMessage('Processing...'); // Set initial feedback
+//     setFeedbackSuccess(true); // Assume success initially for 'processing' style
+//     setShowFeedback(true); // Show feedback popup immediately
+
+//     const userSelectedAttackTypeNum = mapStringToNumericalLabel(attackTypeString);
+
+//     // Validate if the string mapped to a valid number
+//     if (userSelectedAttackTypeNum === undefined) {
+//         console.error(`[AttackTypeDropdown] Failed to flag: Unknown attack type selected: "${attackTypeString}".`);
+//         setFeedbackMessage(`Failed: Unknown type "${attackTypeString}"`);
+//         setFeedbackSuccess(false);
+//         setTimeout(() => setShowFeedback(false), 3000);
+//         setIsLoading(false);
+//         return;
+//     }
+
+//     // Construct the FlagRequest object
+//     const flagRequest: FlagRequest = {
+//       packetId: packetData.id.toString(), // Get packetId from packetData
+//       userattackType: userSelectedAttackTypeNum, // Pass the numerical label
+//       originalLabel: packetData.label || null, // Original ML label from NetworkPacket
+//       originalAttackType: packetData.attack_type || null, // Original broad type from NetworkPacket
+//       timestamp: packetData.time || null,
+//       flowDuration: packetData.flowDuration,
+//       sourceIP: packetData.sourceIP,
+//       destinationIP: packetData.destinationIP,
+//       protocol: packetData.protocol,
+//       srcPort: packetData.srcPort,
+//       dstPort: packetData.dstPort,
+//     };
+
+//     console.log("[AttackTypeDropdown] Sending FlagRequest:", flagRequest);
+
+//     try {
+//       const result = await handleFlagTrafficRequest(flagRequest); // Call the backend service
+//       if (result.success) {
+//         onFlag(); // Notify parent component (AIAttackDetection) that flagging was successful
+//         setFeedbackMessage('Flagged successfully!');
+//         setFeedbackSuccess(true);
+//         setTimeout(() => setShowFeedback(false), 3000);
+//       } else {
+//         console.error(`[AttackTypeDropdown] Flagging failed: ${result.message}`);
+//         setFeedbackMessage(`Failed: ${result.message}`);
+//         setFeedbackSuccess(false);
+//         setTimeout(() => setShowFeedback(false), 3000);
+//       }
+//     } catch (error) {
+//       console.error("[AttackTypeDropdown] An unexpected error occurred during flagging:", error);
+//       setFeedbackMessage(`Error: ${(error as Error).message}`);
+//       setFeedbackSuccess(false);
+//       setTimeout(() => setShowFeedback(false), 3000);
+//     } finally {
+//       setIsLoading(false);
+//     }
+//   };
+
+//   const buttonSize = size === 'sm' ? 'px-2 py-1 text-xs' : 'px-3 py-2 text-sm';
+//   const iconSize = size === 'sm' ? 'w-3 h-3' : 'w-4 h-4';
+
+//   // === UI RENDERING LOGIC (STRICTLY PRESERVED AS PER ORIGINAL) ===
+//   if (currentFlag) {
+//     return (
+//       <div className="relative">
+//         <button
+//           ref={buttonRef}
+//           onClick={() => !disabled && setIsOpen(!isOpen)}
+//           disabled={disabled}
+//           className={`inline-flex items-center space-x-1 ${buttonSize} bg-green-500/10 text-green-400 border border-green-500/20 rounded hover:bg-green-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
+//         >
+//           <Check className={iconSize} />
+//           <span className="truncate max-w-24">{currentFlag.split(' - ')[1] || currentFlag}</span>
+//           {!disabled && <ChevronDown className={`${iconSize} ${isOpen ? 'rotate-180' : ''} transition-transform`} />}
+//         </button>
+
+//         {isOpen && !disabled && ReactDOM.createPortal(
+//           <div style={dropdownStyle} className="bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
+//             <div className="p-2">
+//               <div className="text-xs text-gray-400 mb-2 font-medium">Change Classification:</div>
+              
+//               <div className="text-xs text-cyan-400 mb-2 font-medium">APT Attacks:</div>
+//               {ATTACK_TYPES.APT.map((type) => (
+//                 <button
+//                   key={type}
+//                   onClick={() => handleSelect(type)}
+//                   disabled={isLoading}
+//                   className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded transition-colors disabled:opacity-50"
+//                 >
+//                   {type}
+//                 </button>
+//               ))}
+              
+//               <div className="text-xs text-cyan-400 mb-2 mt-3 font-medium">DDoS Attacks:</div>
+//               {ATTACK_TYPES.DDOS.map((type) => (
+//                 <button
+//                   key={type}
+//                   onClick={() => handleSelect(type)}
+//                   disabled={isLoading}
+//                   className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded transition-colors disabled:opacity-50"
+//                 >
+//                   {type}
+//                 </button>
+//               ))}
+              
+//               <div className="text-xs text-cyan-400 mb-2 mt-3 font-medium">Normal Traffic:</div>
+//               {ATTACK_TYPES.OTHER.map((type) => (
+//                 <button
+//                   key={type}
+//                   onClick={() => handleSelect(type)}
+//                   disabled={isLoading}
+//                   className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded transition-colors disabled:opacity-50"
+//                 >
+//                   {type}
+//                 </button>
+//               ))}
+//             </div>
+//           </div>,
+//           document.body
+//         )}
+
+//         {/* Feedback Popup */}
+//         {showFeedback && (
+//           <div className="absolute top-full left-0 mt-2 bg-green-600 text-white px-3 py-2 rounded-lg shadow-lg z-50 flex items-center space-x-2 animate-fade-in">
+//             <CheckCircle className="w-4 h-4" />
+//             <span className="text-sm font-medium">Feedback sent!</span>
+//           </div>
+//         )}
+//       </div>
+//     );
+//   }
+
+//   return (
+//     <div className="relative">
+//       <button
+//         ref={buttonRef}
+//         onClick={() => setIsOpen(!isOpen)}
+//         disabled={disabled || isLoading}
+//         className={`inline-flex items-center space-x-1 ${buttonSize} bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded hover:bg-cyan-500/20 hover:text-cyan-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
+//       >
+//         {isLoading ? (
+//             <div className="w-4 h-4 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin mr-1"></div>
+//         ) : (
+//             <Flag className={iconSize} />
+//         )}
+//         <span className="font-medium">{isLoading ? "Processing..." : "Flag Attack"}</span>
+//         <ChevronDown className={`${iconSize} ${isOpen ? 'rotate-180' : ''} transition-transform`} />
+//       </button>
+
+//       {isOpen && ReactDOM.createPortal(
+//         <div style={dropdownStyle} className="bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
+//           <div className="p-2">
+//             <div className="text-xs text-cyan-400 mb-2 font-medium">APT Attacks:</div>
+//             {ATTACK_TYPES.APT.map((type) => (
+//               <button
+//                 key={type}
+//                 onClick={() => handleSelect(type)}
+//                 disabled={isLoading}
+//                 className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded transition-colors disabled:opacity-50"
+//               >
+//                 {type}
+//               </button>
+//             ))}
+            
+//             <div className="text-xs text-cyan-400 mb-2 mt-3 font-medium">DDoS Attacks:</div>
+//             {ATTACK_TYPES.DDOS.map((type) => (
+//               <button
+//                 key={type}
+//                 onClick={() => handleSelect(type)}
+//                 disabled={isLoading}
+//                 className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded transition-colors disabled:opacity-50"
+//                 >
+//                   {type}
+//                 </button>
+//               ))}
+              
+//               <div className="text-xs text-cyan-400 mb-2 mt-3 font-medium">Normal Traffic:</div>
+//               {ATTACK_TYPES.OTHER.map((type) => (
+//                 <button
+//                   key={type}
+//                   onClick={() => handleSelect(type)}
+//                   disabled={isLoading}
+//                   className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded transition-colors disabled:opacity-50"
+//                 >
+//                   {type}
+//                 </button>
+//               ))}
+//             </div>
+//           </div>,
+//           document.body
+//         )}
+
+//       {isLoading && (
+//         <div className="absolute inset-0 flex items-center justify-center bg-gray-800/50 rounded">
+//           <div className="w-4 h-4 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin"></div>
+//         </div>
+//       )}
+
+//       {/* Feedback Popup */}
+//       {showFeedback && (
+//         <div className={`absolute top-full left-0 mt-2 ${feedbackSuccess ? 'bg-green-600' : 'bg-red-600'} text-white px-3 py-2 rounded-lg shadow-lg z-50 flex items-center space-x-2 animate-fade-in`}>
+//           {feedbackSuccess ? <CheckCircle className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+//           <span className="text-sm font-medium">{feedbackMessage}</span>
+//         </div>
+//       )}
+//     </div>
+//   );
+// };
+
+// export default AttackTypeDropdown;
+// import React, { useState, useRef, useEffect } from 'react';
+// import ReactDOM from 'react-dom';
+// import { ChevronDown, Flag, Check, CheckCircle } from 'lucide-react';
+// import { ATTACK_TYPES } from '../../types';
+
+// interface AttackTypeDropdownProps {
+//   packetId: string;
+//   currentFlag?: string;
+//   onFlag: (attackType: string) => void;
+//   disabled?: boolean;
+//   size?: 'sm' | 'md';
+// }
+
+// const AttackTypeDropdown: React.FC<AttackTypeDropdownProps> = ({
+//   packetId,
+//   currentFlag,
+//   onFlag,
+//   disabled = false,
+//   size = 'sm'
+// }) => {
+//   const [isOpen, setIsOpen] = useState(false);
+//   const [isLoading, setIsLoading] = useState(false);
+//   const [showFeedback, setShowFeedback] = useState(false);
+//   const buttonRef = useRef<HTMLButtonElement | null>(null);
+//   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+
+//   useEffect(() => {
+//     if (isOpen && buttonRef.current) {
+//       const rect = buttonRef.current.getBoundingClientRect();
+//       setDropdownStyle({
+//         position: 'absolute',
+//         top: rect.bottom + window.scrollY + 4,
+//         left: rect.left + window.scrollX,
+//         zIndex: 9999,
+//         width: 256 // 64 * 4 px (w-64)
+//       });
+//     }
+//   }, [isOpen]);
+
+//   const allAttackTypes = [
+//     ...ATTACK_TYPES.APT,
+//     ...ATTACK_TYPES.DDOS,
+//     ...ATTACK_TYPES.OTHER
+//   ];
+
+//   const handleSelect = async (attackType: string) => {
+//     setIsLoading(true);
+//     try {
+//       await onFlag(attackType);
+//       setIsOpen(false);
+      
+//       // Show feedback popup
+//       setShowFeedback(true);
+//       setTimeout(() => setShowFeedback(false), 3000);
+//     } catch (error) {
+//       console.error('Failed to flag packet:', error);
+//     } finally {
+//       setIsLoading(false);
+//     }
+//   };
+
+//   const buttonSize = size === 'sm' ? 'px-2 py-1 text-xs' : 'px-3 py-2 text-sm';
+//   const iconSize = size === 'sm' ? 'w-3 h-3' : 'w-4 h-4';
+
+//   if (currentFlag) {
+//     return (
+//       <div className="relative">
+//         <button
+//           ref={buttonRef}
+//           onClick={() => !disabled && setIsOpen(!isOpen)}
+//           disabled={disabled}
+//           className={`inline-flex items-center space-x-1 ${buttonSize} bg-green-500/10 text-green-400 border border-green-500/20 rounded hover:bg-green-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
+//         >
+//           <Check className={iconSize} />
+//           <span className="truncate max-w-24">{currentFlag.split(' - ')[1] || currentFlag}</span>
+//           {!disabled && <ChevronDown className={`${iconSize} ${isOpen ? 'rotate-180' : ''} transition-transform`} />}
+//         </button>
+
+//         {isOpen && !disabled && ReactDOM.createPortal(
+//           <div style={dropdownStyle} className="bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
+//             <div className="p-2">
+//               <div className="text-xs text-gray-400 mb-2 font-medium">Change Classification:</div>
+              
+//               <div className="text-xs text-cyan-400 mb-2 font-medium">APT Attacks:</div>
+//               {ATTACK_TYPES.APT.map((type) => (
+//                 <button
+//                   key={type}
+//                   onClick={() => handleSelect(type)}
+//                   disabled={isLoading}
+//                   className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded transition-colors disabled:opacity-50"
+//                 >
+//                   {type}
+//                 </button>
+//               ))}
+              
+//               <div className="text-xs text-cyan-400 mb-2 mt-3 font-medium">DDoS Attacks:</div>
+//               {ATTACK_TYPES.DDOS.map((type) => (
+//                 <button
+//                   key={type}
+//                   onClick={() => handleSelect(type)}
+//                   disabled={isLoading}
+//                   className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded transition-colors disabled:opacity-50"
+//                 >
+//                   {type}
+//                 </button>
+//               ))}
+              
+//               <div className="text-xs text-cyan-400 mb-2 mt-3 font-medium">Normal Traffic:</div>
+//               {ATTACK_TYPES.OTHER.map((type) => (
+//                 <button
+//                   key={type}
+//                   onClick={() => handleSelect(type)}
+//                   disabled={isLoading}
+//                   className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded transition-colors disabled:opacity-50"
+//                 >
+//                   {type}
+//                 </button>
+//               ))}
+//             </div>
+//           </div>,
+//           document.body
+//         )}
+
+//         {/* Feedback Popup */}
+//         {showFeedback && (
+//           <div className="absolute top-full left-0 mt-2 bg-green-600 text-white px-3 py-2 rounded-lg shadow-lg z-50 flex items-center space-x-2 animate-fade-in">
+//             <CheckCircle className="w-4 h-4" />
+//             <span className="text-sm font-medium">Feedback sent!</span>
+//           </div>
+//         )}
+//       </div>
+//     );
+//   }
+
+//   return (
+//     <div className="relative">
+//       <button
+//         ref={buttonRef}
+//         onClick={() => setIsOpen(!isOpen)}
+//         disabled={disabled || isLoading}
+//         className={`inline-flex items-center space-x-1 ${buttonSize} bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded hover:bg-cyan-500/20 hover:text-cyan-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
+//       >
+//         <Flag className={iconSize} />
+//         <span className="font-medium">Flag Attack</span>
+//         <ChevronDown className={`${iconSize} ${isOpen ? 'rotate-180' : ''} transition-transform`} />
+//       </button>
+
+//       {isOpen && ReactDOM.createPortal(
+//         <div style={dropdownStyle} className="bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
+//           <div className="p-2">
+//             <div className="text-xs text-cyan-400 mb-2 font-medium">APT Attacks:</div>
+//             {ATTACK_TYPES.APT.map((type) => (
+//               <button
+//                 key={type}
+//                 onClick={() => handleSelect(type)}
+//                 disabled={isLoading}
+//                 className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded transition-colors disabled:opacity-50"
+//               >
+//                 {type}
+//               </button>
+//             ))}
+            
+//             <div className="text-xs text-cyan-400 mb-2 mt-3 font-medium">DDoS Attacks:</div>
+//             {ATTACK_TYPES.DDOS.map((type) => (
+//               <button
+//                 key={type}
+//                 onClick={() => handleSelect(type)}
+//                 disabled={isLoading}
+//                 className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded transition-colors disabled:opacity-50"
+//               >
+//                 {type}
+//               </button>
+//             ))}
+            
+//             <div className="text-xs text-cyan-400 mb-2 mt-3 font-medium">Normal Traffic:</div>
+//             {ATTACK_TYPES.OTHER.map((type) => (
+//               <button
+//                 key={type}
+//                 onClick={() => handleSelect(type)}
+//                 disabled={isLoading}
+//                 className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded transition-colors disabled:opacity-50"
+//               >
+//                 {type}
+//               </button>
+//             ))}
+//           </div>
+//         </div>,
+//         document.body
+//       )}
+
+//       {isLoading && (
+//         <div className="absolute inset-0 flex items-center justify-center bg-gray-800/50 rounded">
+//           <div className="w-4 h-4 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin"></div>
+//         </div>
+//       )}
+
+//       {/* Feedback Popup */}
+//       {showFeedback && (
+//         <div className="absolute top-full left-0 mt-2 bg-green-600 text-white px-3 py-2 rounded-lg shadow-lg z-50 flex items-center space-x-2 animate-fade-in">
+//           <CheckCircle className="w-4 h-4" />
+//           <span className="text-sm font-medium">Feedback sent!</span>
+//         </div>
+//       )}
+//     </div>
+//   );
+// };
+
+// export default AttackTypeDropdown;
+
+
+// src/components/Common/AttackTypeDropdown.tsx

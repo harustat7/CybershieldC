@@ -419,7 +419,7 @@ export interface NetworkPacket {
   attack_type?: string | null;
   status: string;
   userFlagged?: {
-    userattackType: number;
+    userattackType: string;
     flaggedAt: string;
     confidence?: number;
   };
@@ -572,7 +572,7 @@ export interface AttackDetection {
   affectedSystems: number;
   prediction:string;
   userFlagged?: {
-    userattackType: number;
+    userattackType: string;
     flaggedAt: string;
   };
 }
@@ -601,7 +601,7 @@ export interface AttackHistoryItem {
   status: 'Blocked' | 'Monitored' | 'Investigating';
   sourceIP: string;
   userFlagged?: {
-    userattackType: number;
+    userattackType: string;
     flaggedAt: string;
   };
 }
@@ -618,7 +618,7 @@ export interface LogEntry {
   details: string;
   confidence?: number;
   userFlagged?: {
-    userattackType: number;
+    userattackType: string;
     flaggedAt: string;
     confidence?: number;
   };
