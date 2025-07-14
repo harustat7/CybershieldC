@@ -27,7 +27,7 @@ RAW_CAPTURE_DIR = "raw_captures"
 
 # This parameter tells your custom pyflowmeter when to create a NEW file.
 # We are assuming it's based on packet count.
-PACKET_CHUNK_SIZE = 500
+PACKET_CHUNK_SIZE = 100
 
 
 # Set a very long duration to run until manually stopped with Ctrl+C.

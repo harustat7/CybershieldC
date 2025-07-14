@@ -70,7 +70,6 @@ const LiveTrafficMonitor: React.FC = () => {
   // Use Supabase packets instead of fake data
   const { packets, loading: packetsLoading, error: packetsError, refetch } = useSupabasePackets(25, isDemoTrafficLive || isLiveTrafficLive);
 
-
   // Filter packets based on live traffic start time
   const filteredPackets = useMemo(() => {
     if (!isLiveTrafficLive || !liveTrafficStartTime) {
@@ -99,13 +98,7 @@ const LiveTrafficMonitor: React.FC = () => {
     });
   }, [filteredPackets]);
 
-  // Now declare all useState/useEffect that use sortedFilteredPackets below this
-  // New state for current packet index
-  const [currentPacketIndex, setCurrentPacketIndex] = useState(0);
-  // Remove displayedPackets state and all setDisplayedPackets logic
-
-  // Remove streaming/interval logic and related state
-  // Show the most recent 25 packets at once (sliding window, no streaming)
+  // Show the most recent 25 packets at once
   const [visiblePackets, setVisiblePackets] = useState<NetworkPacket[]>([]);
   const [currentPacket, setCurrentPacket] = useState<NetworkPacket | null>(null);
 
@@ -116,43 +109,23 @@ const LiveTrafficMonitor: React.FC = () => {
       setCurrentPacket(null);
       return;
     }
-    const latestPackets = sortedFilteredPackets.slice(0, 25); // newest to oldest
+    // Always limit to 25 packets maximum
+    const latestPackets = sortedFilteredPackets.slice(0, 25);
     setVisiblePackets(latestPackets);
     setCurrentPacket(latestPackets.length > 0 ? latestPackets[0] : null);
   }, [sortedFilteredPackets, isAnyTrafficActive]);
 
-
-  // Sliding window packet display logic
+  // Update current packet every 100ms to the latest (top) packet
   useEffect(() => {
-    if (!isAnyTrafficActive) {
-      setVisiblePackets([]);
-      setCurrentPacketIndex(0);
+    if (!visiblePackets.length) {
+      setCurrentPacket(null);
       return;
     }
-
-    // Use sorted filtered packets instead of all packets
-    const latestPackets = sortedFilteredPackets.slice(-25);
-    setVisiblePackets(latestPackets);
-
-    // Add packets one by one with sliding window effect
-    if (latestPackets.length > visiblePackets.length) {
-      const newPackets = latestPackets.slice(visiblePackets.length);
-      
-      newPackets.forEach((packet, index) => {
-        setTimeout(() => {
-          setVisiblePackets(prev => {
-            const newDisplayed = [...prev, packet];
-            // Keep only the last 25 packets (sliding window)
-            return newDisplayed.slice(-25);
-          });
-        }, index * 200); // 200ms delay between each packet
-      });
-    } else if (latestPackets.length < visiblePackets.length) {
-      // If we have fewer packets, reset to show all current packets
-      setVisiblePackets(latestPackets);
-    }
-  }, [sortedFilteredPackets, isDemoTrafficLive, isLiveTrafficLive]);
-
+    const interval = setInterval(() => {
+      setCurrentPacket(visiblePackets[0]); // Always show the top (newest) packet
+    }, 100);
+    return () => clearInterval(interval);
+  }, [visiblePackets]);
 
   // Track the ID of the most recently added packet for animation
   const [newPacketId, setNewPacketId] = useState<number | null>(null);

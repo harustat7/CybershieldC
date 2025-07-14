@@ -7,7 +7,7 @@ import time
 from csv_webhook_sender import CSVWebhookSender
 
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:5173"])
+CORS(app)
 
 # Global variables to track the senders
 csv_sender = None
@@ -34,28 +34,30 @@ def start_demo_traffic():
         # Create CSV sender instance
         csv_sender = CSVWebhookSender(webhook_url)
         
-        # Check if CSV file exists
+        # Check if CSV file exists (for fallback)
         if not csv_sender.check_csv_file():
             return jsonify({
                 'success': False,
-                'message': 'CSV file not found. Please run the attack traffic generation script first.',
+                'message': 'Base CSV file not found. Please run the attack traffic generation script first.',
                 'status': 'csv_not_found'
             }), 400
         
-        # Start sending CSV file in a separate thread
-        def send_csv_file_periodically():
+        # Start sending live traffic batches in a separate thread
+        def send_live_traffic_batches():
             csv_sender.start_periodic_sending(interval_seconds=10)  # Send every 10 seconds
         
-        sender_thread = threading.Thread(target=send_csv_file_periodically, daemon=True)
+        sender_thread = threading.Thread(target=send_live_traffic_batches, daemon=True)
         sender_thread.start()
         
         return jsonify({
             'success': True,
-            'message': 'Demo traffic started successfully - sending CSV file to webhook',
+            'message': 'Demo traffic started successfully - generating live malicious traffic batches',
             'webhook_url': webhook_url,
             'status': 'running',
-            'csv_file': 'complete_flow_features.csv',
-            'upload_type': 'file_upload'
+            'batch_size': '100 packets per CSV',
+            'upload_type': 'live_traffic_batches',
+            'attack_types': ['APT', 'DDoS'],
+            'description': 'Live malicious traffic generation with APT and DDoS attacks'
         })
         
     except Exception as e:
@@ -126,7 +128,7 @@ def get_demo_traffic_status():
 
 @app.route('/api/demo-traffic/send-once', methods=['POST'])
 def send_csv_once():
-    """Send CSV file once to webhook"""
+    """Send live traffic batch once to webhook"""
     try:
         data = request.get_json() or {}
         webhook_url = data.get('webhook_url', 'https://metasage-ai.app.n8n.cloud/webhook/e8525f42-b2c8-4432-9844-c723d6fe5ba9')
@@ -134,36 +136,38 @@ def send_csv_once():
         # Create temporary sender
         temp_sender = CSVWebhookSender(webhook_url)
         
-        # Send CSV file once
+        # Send live traffic batch once
         success = temp_sender.send_csv_once()
         
         if success:
             return jsonify({
                 'success': True,
-                'message': 'CSV file sent successfully to webhook',
+                'message': 'Live traffic batch sent successfully to webhook',
                 'webhook_url': webhook_url,
-                'upload_type': 'file_upload'
+                'upload_type': 'live_traffic_batch',
+                'batch_size': '100 packets',
+                'attack_types': ['APT', 'DDoS']
             })
         else:
             return jsonify({
                 'success': False,
-                'message': 'Failed to send CSV file to webhook',
+                'message': 'Failed to send live traffic batch to webhook',
                 'webhook_url': webhook_url
             }), 500
             
     except Exception as e:
         return jsonify({
             'success': False,
-            'message': f'Failed to send CSV file: {str(e)}',
+            'message': f'Failed to send live traffic batch: {str(e)}',
             'status': 'error'
         }), 500
 
 # ==================== LIVE TRAFFIC ENDPOINTS ====================
 
-# @app.route('/api/live-traffic/start', methods=['POST'])
-# def start_live_traffic():
-#     """Start live traffic capture"""
-#     global live_capture
+@app.route('/api/live-traffic/start', methods=['POST'])
+def start_live_traffic():
+    """Start live traffic capture"""
+    global live_capture
     
 #     try:
 #         data = request.get_json() or {}
