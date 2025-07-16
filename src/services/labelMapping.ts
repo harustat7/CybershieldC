@@ -33,6 +33,13 @@ export const getAttackLabelString = (
   attackType: string | null | undefined,
   label: number | string | null | undefined
 ): string => {
+  console.log({
+    rawAttackType: attackType,
+    trimmedAttackType: attackType?.trim(),
+    normalisedAttackType: attackType?.trim().toUpperCase(),
+    rawLabel: label,
+    labelNumber: Number(label),
+  });
   // Normalize label to a number for consistent comparison. NaN if not a valid number.
   const labelNumber = Number(label);
   

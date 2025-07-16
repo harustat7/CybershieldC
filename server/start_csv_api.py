@@ -19,7 +19,7 @@ def install_requirements():
 
 def check_csv_file():
     """Check if CSV file exists"""
-    csv_file = 'complete_flow_features.csv'
+    csv_file = 'restructured_dataset.csv'
     if os.path.exists(csv_file):
         print(f"✅ Found CSV file: {csv_file}")
         return True

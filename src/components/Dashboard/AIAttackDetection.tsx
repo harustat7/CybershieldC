@@ -300,20 +300,223 @@
 
 // src/components/AIAttackDetection.tsx
 
+// import React, { useEffect, useState, useRef } from 'react';
+// import { Brain, Shield, AlertTriangle, Flag } from 'lucide-react';
+// import { NetworkPacket } from '../../types'; // No ATTACK_TYPES import directly here
+// import { useSupabasePackets } from '../../hooks/useSupabasePackets';
+// import AttackTypeDropdown from '../Common/AttackTypeDropdown';
+// import { getAttackLabelString as getAttackDetectionLabel } from './../../services/labelMapping';
+// import { getProtocolName } from '../../services/protocolMapping';
+
+// // Removed unnecessary comments and unused code blocks as per standard clean code practices.
+// // Constants for Normal Labels (matching backend numerical values)
+// const APT_NORMAL_LABEL_NUM = 3;
+// const DOS_NORMAL_LABEL_NUM = 0;
+
+
+// const formatTimeHHMMSS = (dateTimeString: string | null) => {
+//   if (!dateTimeString) return 'N/A';
+//   if (/^\d{2}:\d{2}:\d{2}$/.test(dateTimeString)) return dateTimeString;
+  
+//   try {
+//     const d = new Date(dateTimeString);
+//     if (!isNaN(d.getTime())) {
+//       const timeMatch = dateTimeString.match(/(\d{2}:\d{2}:\d{2})/);
+//       if (timeMatch) {
+//         return timeMatch[1];
+//       }
+//       const utcTime = d.getUTCHours().toString().padStart(2, '0') + ':' +
+//                      d.getUTCMinutes().toString().padStart(2, '0') + ':' +
+//                      d.getUTCSeconds().toString().padStart(2, '0');
+//       return utcTime;
+//     }
+    
+//     const parts = dateTimeString.split(/[ T]/);
+//     if (parts.length > 1 && /^\d{2}:\d{2}:\d{2}/.test(parts[1])) {
+//       return parts[1].slice(0, 8);
+//     }
+//   } catch (error) {
+//     console.warn('Error parsing time:', dateTimeString, error);
+//   }
+  
+//   return dateTimeString;
+// };
+
+
+// interface AIAttackDetectionProps {
+//   isAnyTrafficActive: boolean;
+//   hasPacketsDisplayed: boolean; // Indicates if LiveTrafficMonitor has started showing packets
+// }
+
+// const AIAttackDetection: React.FC<AIAttackDetectionProps> = ({ isAnyTrafficActive, hasPacketsDisplayed }) => {
+//   const { packets, loading, error } = useSupabasePackets(1, isAnyTrafficActive);
+ 
+//   const [currentPacket, setCurrentPacket] = useState<NetworkPacket | null>(null);
+//   const [isUpdating, setIsUpdating] = useState(false);
+//   const [flagged, setFlagged] = useState(false); // This state will be managed as per original code
+
+//   const lastPacketId = useRef<number | null>(null);
+
+//   useEffect(() => {
+//     if (packets.length > 0) {
+//       const latestPacket = packets[0];
+//       if (latestPacket.id !== lastPacketId.current) {
+//         setCurrentPacket(latestPacket);
+//         lastPacketId.current = latestPacket.id;
+//         setFlagged(false); // Reset flagged state for new packet
+//         setIsUpdating(true);
+//         const timer = setTimeout(() => setIsUpdating(false), 1000);
+//         return () => clearTimeout(timer);
+//       }
+//     } else {
+//       setCurrentPacket(null);
+//       lastPacketId.current = null;
+//       setIsUpdating(false); // Ensure any update animation stops
+//     }
+//   }, [packets]);
+
+
+//   if (loading && !currentPacket) {
+//     return (
+//       <div className="bg-gray-900/50 backdrop-blur-sm border border-cyan-500/20 rounded-xl p-6 h-full flex items-center justify-center">
+//         <div className="text-center">
+//           <div className="w-12 h-12 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin mx-auto mb-4"></div>
+//           <p className="text-gray-400">Loading detection...</p>
+//         </div>
+//       </div>
+//     );
+//   }
+
+
+//   if (error) {
+//     return (
+//       <div className="bg-gray-900/50 backdrop-blur-sm border border-cyan-500/20 rounded-xl p-6 h-full flex items-center justify-center">
+//         <div className="text-center">
+//           <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+//           <p className="text-red-400 mb-2">Failed to load</p>
+//           <p className="text-gray-400 text-sm">{error}</p>
+//         </div>
+//       </div>
+//     );
+//   }
+
+//   if (!currentPacket) {
+//     return (
+//       <div className="bg-gray-900/50 backdrop-blur-sm border border-cyan-500/20 rounded-xl p-6 h-full flex items-center justify-center">
+//         <div className="text-center">
+//           <Brain className="w-12 h-12 text-purple-400 mx-auto mb-4 animate-pulse" />
+//           {!isAnyTrafficActive ? (
+//             <>
+//               <p className="text-gray-400">No active traffic monitoring.</p>
+//               <p className="text-gray-500 text-sm mt-2">Start traffic monitoring to see real-time predictions.</p>
+//             </>
+//           ) : !hasPacketsDisplayed && loading ? (
+//             <>
+//               <p className="text-gray-400">Waiting for initial packet data...</p>
+//               <p className="text-gray-500 text-sm mt-2">Packets will appear here once analysis begins.</p>
+//             </>
+//           ) : (
+//             <>
+//               <p className="text-gray-400">No packets found for analysis.</p>
+//               <p className="text-gray-500 text-sm mt-2">Monitoring is active, but no new packets for detection.</p>
+//             </>
+//           )}
+//         </div>
+//       </div>
+//     );
+//   }
+
+//   return (
+//     <div className={`bg-gray-900/50 backdrop-blur-sm border border-cyan-500/20 rounded-xl p-6 h-full transition-all duration-500 ${
+//       isUpdating ? 'ring-2 ring-cyan-500/50' : ''
+//     }`}>
+//       <div className="flex items-center justify-between mb-6">
+//         <div className="flex items-center space-x-3">
+//           <div className="flex items-center justify-center w-10 h-10 bg-purple-500/10 rounded-lg border border-purple-500/20">
+//             <Brain className="w-5 h-5 text-purple-400 animate-pulse" />
+//           </div>
+//           <div>
+//             <h2 className="text-lg font-semibold text-white">Attack Detection</h2>
+//           </div>
+//         </div>
+//         <div className="text-right">
+//           <p className="text-xs text-gray-400">Last updated</p>
+//           <p className="text-sm text-cyan-400 font-mono">{formatTimeHHMMSS(currentPacket.time)}</p>
+//         </div>
+//       </div>
+
+
+//       <div className="space-y-6">
+//         <div className="bg-gray-800/30 rounded-lg p-4 border border-gray-700/30">
+//           <div className="flex items-center justify-between mb-3">
+//             <h3 className="text-sm font-medium text-gray-300">Current Packet Analysis</h3>
+//           </div>
+//           <div className="space-y-3">
+//             <div>
+//               <p className="text-white font-semibold text-lg mb-1">
+//                 {getAttackDetectionLabel(currentPacket.attack_type, currentPacket.label)}
+//               </p>
+             
+//               <div className="grid grid-cols-2 gap-2 text-sm text-gray-300 mt-2">
+//                 <div><span className="font-semibold text-gray-400">Protocol:</span> {getProtocolName(currentPacket.protocol, currentPacket.srcPort, currentPacket.dstPort)}</div>
+//                 <div><span className="font-semibold text-gray-400">Time:</span> {formatTimeHHMMSS(currentPacket.time)}</div>
+//                 <div><span className="font-semibold text-gray-400">Source IP:</span> {currentPacket.sourceIP}:{currentPacket.srcPort}</div>
+//                 <div><span className="font-semibold text-gray-400">Destination IP:</span> {currentPacket.destinationIP}:{currentPacket.dstPort}</div>
+//                 <div><span className="font-semibold text-gray-400">Flow Duration:</span> {currentPacket.flowDuration} ms</div>
+//                 <div><span className="font-semibold text-gray-400">Packet ID:</span> {currentPacket.id}</div>
+//               </div>
+//               <div className="mt-3 text-xs text-gray-400 italic">
+//                 {(Number(currentPacket.label) === DOS_NORMAL_LABEL_NUM || Number(currentPacket.label) === APT_NORMAL_LABEL_NUM)
+//                   ? 'Normal network traffic detected. No threats identified in this packet.'
+//                   : 'Malicious activity detected! This packet contains attack patterns and should be blocked.'
+//                 }
+//               </div>
+              
+//             </div>
+//           </div>
+//         </div>
+       
+//         <div className="bg-gray-800/30 rounded-lg p-4 border border-gray-700/30 flex items-center space-x-4">
+//           <div className="flex-1 text-gray-400 text-sm">
+//             If you think this analysis is incorrect, you can flag it for review.
+//           </div>
+//           {currentPacket && ( // Ensure currentPacket exists before passing to dropdown
+//             <AttackTypeDropdown
+//               packetData={currentPacket} // Pass the entire packet data
+//               onFlag={() => setFlagged(true)} // Keep original onFlag to update 'flagged' state
+//               disabled={flagged}
+//               size="md"
+//               currentFlag={currentPacket.userFlagged?.userattackType} // Pass userFlagged status to control dropdown's green state
+//             />
+//           )}
+//           {flagged && (
+//             <span className="text-green-400 text-sm flex items-center space-x-1"><Flag className="w-4 h-4 mr-1" />Flagged!</span>
+//           )}
+//         </div>
+//       </div>
+//     </div>
+//   );
+// };
+
+
+// export default AIAttackDetection;
+
+
+// src/components/Dashboard/AIAttackDetection.tsx
+
 import React, { useEffect, useState, useRef } from 'react';
 import { Brain, Shield, AlertTriangle, Flag } from 'lucide-react';
-import { NetworkPacket } from '../../types'; // No ATTACK_TYPES import directly here
-import { useSupabasePackets } from '../../hooks/useSupabasePackets';
-import AttackTypeDropdown from '../Common/AttackTypeDropdown';
-import { getAttackLabelString as getAttackDetectionLabel } from './../../services/labelMapping';
-import { getProtocolName } from '../../services/protocolMapping';
+import { NetworkPacket } from '../../types'; // Make sure this path is correct
 
-// Removed unnecessary comments and unused code blocks as per standard clean code practices.
+import AttackTypeDropdown from '../Common/AttackTypeDropdown'; // Make sure this path is correct
+import { getAttackLabelString as getAttackDetectionLabel } from './../../services/labelMapping'; // Make sure this path is correct
+import { getProtocolName } from '../../services/protocolMapping'; // Make sure this path is correct
+
 // Constants for Normal Labels (matching backend numerical values)
 const APT_NORMAL_LABEL_NUM = 3;
 const DOS_NORMAL_LABEL_NUM = 0;
 
-
+// Helper function to format time (remains unchanged)
 const formatTimeHHMMSS = (dateTimeString: string | null) => {
   if (!dateTimeString) return 'N/A';
   if (/^\d{2}:\d{2}:\d{2}$/.test(dateTimeString)) return dateTimeString;
@@ -336,47 +539,58 @@ const formatTimeHHMMSS = (dateTimeString: string | null) => {
       return parts[1].slice(0, 8);
     }
   } catch (error) {
-    console.warn('Error parsing time:', dateTimeString, error);
+    console.warn('Error parsing time in AIAttackDetection:', dateTimeString, error); // Added component name to warn
   }
   
   return dateTimeString;
 };
 
-
+// --- START: AIAttackDetectionProps Interface (All props defined here) ---
 interface AIAttackDetectionProps {
+  currentPacket: NetworkPacket | null; // This is the single source of truth for the displayed packet
   isAnyTrafficActive: boolean;
-  hasPacketsDisplayed: boolean; // Indicates if LiveTrafficMonitor has started showing packets
+  hasPacketsDisplayed: boolean;
+  loading: boolean; // Prop for loading status (from Dashboard's useSupabasePackets)
+  error: string | null; // Prop for error message (from Dashboard's useSupabasePackets)
 }
+// --- END: AIAttackDetectionProps Interface ---
 
-const AIAttackDetection: React.FC<AIAttackDetectionProps> = ({ isAnyTrafficActive, hasPacketsDisplayed }) => {
-  const { packets, loading, error } = useSupabasePackets(1, isAnyTrafficActive);
- 
-  const [currentPacket, setCurrentPacket] = useState<NetworkPacket | null>(null);
+const AIAttackDetection: React.FC<AIAttackDetectionProps> = ({
+  // --- START: Destructuring All Props Here ---
+  currentPacket, // Destructure currentPacket prop
+  isAnyTrafficActive,
+  hasPacketsDisplayed,
+  loading, // Destructure loading prop (from Dashboard)
+  error // Destructure error prop (from Dashboard)
+  // --- END: Destructuring All Props Here ---
+}) => {
+  // `useSupabasePackets` hook is correctly removed here as data comes via props from Dashboard
+
   const [isUpdating, setIsUpdating] = useState(false);
-  const [flagged, setFlagged] = useState(false); // This state will be managed as per original code
-
-  const lastPacketId = useRef<number | null>(null);
+  const [flagged, setFlagged] = useState(false);
+  const lastPacketId = useRef<number | null>(null); // To track if currentPacket prop changed
 
   useEffect(() => {
-    if (packets.length > 0) {
-      const latestPacket = packets[0];
-      if (latestPacket.id !== lastPacketId.current) {
-        setCurrentPacket(latestPacket);
-        lastPacketId.current = latestPacket.id;
-        setFlagged(false); // Reset flagged state for new packet
-        setIsUpdating(true);
-        const timer = setTimeout(() => setIsUpdating(false), 1000);
-        return () => clearTimeout(timer);
-      }
-    } else {
-      setCurrentPacket(null);
+    // Only update if the currentPacket prop itself has changed (by ID)
+    if (currentPacket && currentPacket.id !== lastPacketId.current) {
+      lastPacketId.current = currentPacket.id; // Update ref to new packet ID
+      setFlagged(false); // Reset flagged state for new packet
+      setIsUpdating(true); // Start update animation
+      const timer = setTimeout(() => setIsUpdating(false), 1000); // Stop animation after 1s
+      return () => clearTimeout(timer); // Cleanup timeout on unmount or re-run
+    } else if (!currentPacket) {
+      // If currentPacket becomes null, clear states and stop animations
+      setIsUpdating(false);
+      setFlagged(false);
       lastPacketId.current = null;
-      setIsUpdating(false); // Ensure any update animation stops
     }
-  }, [packets]);
+  }, [currentPacket]); // Depend ONLY on the currentPacket prop
 
+  // --- START: Conditional Rendering for Loading/Error/No Packet ---
+  // These blocks correctly use the 'loading' and 'error' props passed from Dashboard.
 
-  if (loading && !currentPacket) {
+  // Case 1: Initial loading or no current packet yet
+  if (loading && !currentPacket) { // Use the 'loading' prop here
     return (
       <div className="bg-gray-900/50 backdrop-blur-sm border border-cyan-500/20 rounded-xl p-6 h-full flex items-center justify-center">
         <div className="text-center">
@@ -387,8 +601,8 @@ const AIAttackDetection: React.FC<AIAttackDetectionProps> = ({ isAnyTrafficActiv
     );
   }
 
-
-  if (error) {
+  // Case 2: Error occurred during packet fetching (error prop from Dashboard)
+  if (error) { // Use the 'error' prop here
     return (
       <div className="bg-gray-900/50 backdrop-blur-sm border border-cyan-500/20 rounded-xl p-6 h-full flex items-center justify-center">
         <div className="text-center">
@@ -400,6 +614,7 @@ const AIAttackDetection: React.FC<AIAttackDetectionProps> = ({ isAnyTrafficActiv
     );
   }
 
+  // Case 3: No current packet to display (after loading, no error)
   if (!currentPacket) {
     return (
       <div className="bg-gray-900/50 backdrop-blur-sm border border-cyan-500/20 rounded-xl p-6 h-full flex items-center justify-center">
@@ -410,7 +625,7 @@ const AIAttackDetection: React.FC<AIAttackDetectionProps> = ({ isAnyTrafficActiv
               <p className="text-gray-400">No active traffic monitoring.</p>
               <p className="text-gray-500 text-sm mt-2">Start traffic monitoring to see real-time predictions.</p>
             </>
-          ) : !hasPacketsDisplayed && loading ? (
+          ) : !hasPacketsDisplayed && loading ? ( // Rely on hasPacketsDisplayed and 'loading' prop
             <>
               <p className="text-gray-400">Waiting for initial packet data...</p>
               <p className="text-gray-500 text-sm mt-2">Packets will appear here once analysis begins.</p>
@@ -425,7 +640,10 @@ const AIAttackDetection: React.FC<AIAttackDetectionProps> = ({ isAnyTrafficActiv
       </div>
     );
   }
+  // --- END: Conditional Rendering for Loading/Error/No Packet ---
 
+  // --- START: Main Component UI (Restored) ---
+  // If we reach here, currentPacket is guaranteed to be a NetworkPacket (not null)
   return (
     <div className={`bg-gray-900/50 backdrop-blur-sm border border-cyan-500/20 rounded-xl p-6 h-full transition-all duration-500 ${
       isUpdating ? 'ring-2 ring-cyan-500/50' : ''
@@ -466,7 +684,8 @@ const AIAttackDetection: React.FC<AIAttackDetectionProps> = ({ isAnyTrafficActiv
                 <div><span className="font-semibold text-gray-400">Packet ID:</span> {currentPacket.id}</div>
               </div>
               <div className="mt-3 text-xs text-gray-400 italic">
-                {(Number(currentPacket.label) === DOS_NORMAL_LABEL_NUM || Number(currentPacket.label) === APT_NORMAL_LABEL_NUM)
+                {/* Note: currentPacket.label here is already the mapped string from Dashboard's process */}
+                {(currentPacket.label === 'Normal (DOS Context)' || currentPacket.label === 'Normal (APT Context)' || currentPacket.label === 'Normal')
                   ? 'Normal network traffic detected. No threats identified in this packet.'
                   : 'Malicious activity detected! This packet contains attack patterns and should be blocked.'
                 }
@@ -480,13 +699,14 @@ const AIAttackDetection: React.FC<AIAttackDetectionProps> = ({ isAnyTrafficActiv
           <div className="flex-1 text-gray-400 text-sm">
             If you think this analysis is incorrect, you can flag it for review.
           </div>
+          
           {currentPacket && ( // Ensure currentPacket exists before passing to dropdown
             <AttackTypeDropdown
-              packetData={currentPacket} // Pass the entire packet data
-              onFlag={() => setFlagged(true)} // Keep original onFlag to update 'flagged' state
-              disabled={flagged}
+              packetData={currentPacket} 
               size="md"
-              currentFlag={currentPacket.userFlagged?.userattackType} // Pass userFlagged status to control dropdown's green state
+              onFlag={() => setFlagged(true)}
+              disabled={flagged}
+              currentFlag={currentPacket.userFlagged?.userattackType}
             />
           )}
           {flagged && (
@@ -497,6 +717,6 @@ const AIAttackDetection: React.FC<AIAttackDetectionProps> = ({ isAnyTrafficActiv
     </div>
   );
 };
-
+// --- END: Main Component UI (Restored) ---
 
 export default AIAttackDetection;

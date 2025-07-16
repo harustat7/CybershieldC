@@ -208,12 +208,12 @@ export const getProtocolName = (
         }
       }
       // If no specific application protocol was found via ports, fall back to the transport protocol name (TCP or UDP)
-      return IP_PROTOCOL_NUMBERS[protoNum] || `Unknown (${protoNum})`;
+      return IP_PROTOCOL_NUMBERS[protoNum] || String(protoNum);
     }
 
     // For other IP protocol numbers (e.g., 1 for ICMP, 47 for GRE, 88 for EIGRP, 89 for OSPF)
     // These do not rely on port numbers for their basic identification.
-    return IP_PROTOCOL_NUMBERS[protoNum] || `Unknown (${protoNum})`;
+    return IP_PROTOCOL_NUMBERS[protoNum] || String(protoNum);
 
   } else {
     // This branch is only reached if 'protocol' was originally a non-numeric string

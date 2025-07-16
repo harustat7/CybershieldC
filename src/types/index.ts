@@ -589,6 +589,7 @@ export interface SupabasePacket {
   flow_duration: number;
   label?: string | null;
   attack_type?: string | null;
+  
 }
 
 // 9. AttackHistoryItem (unchanged)
